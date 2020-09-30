@@ -126,7 +126,8 @@ export class DBGateway {
             entryID: entryID,
             parentID: parentID,
             name: name,
-            entryType: 'directory'
+            entryType: 'directory',
+            lastModified: new Date()
         };
         try {
             await this.db('entries').insert(entry);
