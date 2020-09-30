@@ -237,15 +237,27 @@ export class DBGateway {
             entryType: 'file',
             fileID: upload.fileID
         };
-        await this.db.transaction(async function(transaction) {
-            await transaction('files').update({
-                expires: null
-            }).where({
-                filesystemID: filesystemID,
-                fileID: upload.fileID
+        try {
+            await this.db.transaction(async function(transaction) {
+                await transaction('files').update({
+                    expires: null
+                }).where({
+                    filesystemID: filesystemID,
+                    fileID: upload.fileID
+                });
+                await transaction('entries').insert(entryRecord);
             });
-            await transaction('entries').insert(entryRecord);
-        });
-        return entryRecord;
+            return entryRecord;
+        } catch (error) {
+            if (error.code === SQL_FOREIGN_KEY_VIOLATION) {
+                throw new NoParentDirectoryError(upload.parentID!);
+            }
+            if (error.code === SQL_UNIQUE_CONSTRAINT_VIOLATION) {
+                if (error.constraint === 'entries_unique_name') {
+                    throw new DuplicateEntryNameError(upload.parentID, upload.name);
+                }
+            }
+            throw error;
+        }
     }
 };
