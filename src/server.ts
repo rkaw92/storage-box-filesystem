@@ -10,6 +10,7 @@ import { Filesystems } from './Filesystems';
 import { FilesystemFactory } from './Filesystem';
 import { MinioBackend } from './infrastructure/backends/MinioBackend';
 import { SingleStorageBackendManager } from './infrastructure/SingleStorageBackendManager';
+import { UploadTokenHandler } from './infrastructure/uploadTokens';
 
 declare module "fastify" {
     interface FastifyRequest {
@@ -33,7 +34,10 @@ const filesystems = new Filesystems({ db });
 const filesystemFactory = new FilesystemFactory({
     db,
     storageBackendSelector: backendManager,
-    storageBackendRepository: backendManager
+    storageBackendRepository: backendManager,
+    uploadTokenHandler: new UploadTokenHandler({
+        secret: process.env.UPLOAD_TOKEN_SECRET!
+    })
 });
 const app = fastify({
     logger: true

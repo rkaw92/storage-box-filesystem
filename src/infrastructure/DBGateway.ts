@@ -1,11 +1,11 @@
 import Knex from 'knex';
 import { UserIdentification } from '../types/UserIdentification';
-import { AppError, NoParentDirectoryError, DuplicateEntryNameError, FileNotFoundError, EntryNotFoundError } from '../types/errors';
+import { AppError, NoParentDirectoryError, DuplicateEntryNameError, FileNotFoundError, EntryNotFoundError, EntryNotFoundByNameError } from '../types/errors';
 import { FilesystemPermissionsRecord, FilesystemRecordID, FileRecord, EntryRecord } from '../types/records';
 import { FilesystemPermissions } from '../types/FilesystemPermissions';
-import { FilesystemID, EntryID, FileID } from '../types/IDs';
+import { FilesystemID, EntryID, FileID, ParentID } from '../types/IDs';
 import { File } from '../types/File';
-import { FileUploadStart, FileUploadStartWithBackend, FileUpload } from '../types/Inputs';
+import { FileDataUploadStart, FileUpload } from '../types/Inputs';
 import { FileEntry } from '../types/FileEntry';
 import { DirectoryEntry } from '../types/DirectoryEntry';
 import { Entry } from '../types/Entry';
@@ -17,6 +17,8 @@ const ONE_HOUR = ONE_MINUTE * 60;
 const MINIMUM_BITS_PER_SECOND = 1000000;
 const MINIMUM_BYTES_PER_SECOND = MINIMUM_BITS_PER_SECOND / 8;
 const MINIMUM_TIME = 5 * ONE_MINUTE;
+
+const entryColumns = [ 'filesystemID', 'entryID', 'parentID', 'name', 'entryType', 'fileID', 'lastModified' ];
 
 export class DBGateway {
     private db: Knex;
@@ -154,7 +156,7 @@ export class DBGateway {
             });
     }
 
-    async createFileRecords(filesystemID: FilesystemID, files: FileUploadStartWithBackend[]) {
+    async createFileRecords(filesystemID: FilesystemID, files: FileDataUploadStart[]): Promise<FileRecord[]> {
         const self = this;
         if (files.length === 0) {
             return [];
@@ -164,13 +166,15 @@ export class DBGateway {
         return await this.db.transaction(async function(transaction) {
             const fileIDs = await self.obtainValuesFromSequence(transaction, self.getSequenceNameForFiles(filesystemID), files.length);
             const expiryDate = new Date(Date.now() + secondsAllowedToFinishUpload * 1000);
-            const fileRecords = files.map((upload, index) => ({
+            const fileRecords: FileRecord[] = files.map((upload, index) => ({
                 filesystemID: filesystemID,
                 fileID: fileIDs[index],
-                referenceCount: 0,
+                referenceCount: '0',
                 backendID: upload.backendID,
                 backendURI: upload.backendURI,
-                expires: expiryDate
+                expires: expiryDate,
+                uploadFinished: false,
+                bytes: upload.bytes.toString(10)
             }));
             await transaction('files').insert(fileRecords);
             return fileRecords;
@@ -190,9 +194,38 @@ export class DBGateway {
         }
     }
 
+    async getEntriesByPaths(filesystemID: FilesystemID, paths: Array<{ parentID: ParentID, name: string }>): Promise<Entry[]> {
+        const uniqueParentIDs = new Set(paths.map((path) => path.parentID));
+        let query;
+        if (uniqueParentIDs.size === 1) {
+            // Use a simpler query - likely to be optimized by the DB by looking into just 1 branch of the B-tree:
+            query = this.db('entries')
+                .select(entryColumns)
+                .where({
+                    filesystemID: filesystemID,
+                    parentID: [...uniqueParentIDs.values()][0]
+                }).whereIn('name', paths.map((path) => path.name));
+        } else {
+            query = this.db('entries')
+                .select(entryColumns)
+                .where({
+                    filesystemID: filesystemID
+                }).andWhere(function() {
+                    for (let path of paths) {
+                        this.orWhere({
+                            parentID: path.parentID,
+                            name: path.name
+                        });
+                    }
+                });
+        }
+        const records: EntryRecord[] = await query;
+        return records.map((record) => this.entryFromRecord(record));
+    }
+
     async getEntry(filesystemID: FilesystemID, entryID: EntryID) {
         const record: EntryRecord | undefined = await this.db('entries')
-            .first('filesystemID', 'entryID', 'parentID', 'name', 'entryType', 'fileID', 'lastModified')
+            .first(entryColumns)
             .where({
                 filesystemID: filesystemID,
                 entryID: entryID
@@ -206,7 +239,7 @@ export class DBGateway {
 
     async getFile(filesystemID: FilesystemID, fileID: FileID) {
         const record: FileRecord | undefined = await this.db('files')
-            .first('filesystemID', 'fileID', 'referenceCount', 'backendID', 'backendURI', 'expires', 'bytes')
+            .first('filesystemID', 'fileID', 'referenceCount', 'backendID', 'backendURI', 'expires', 'uploadFinished', 'bytes')
             .where({
                 filesystemID: filesystemID,
                 fileID: fileID
@@ -219,6 +252,7 @@ export class DBGateway {
             fileID: record.fileID,
             referenceCount: BigInt(record.referenceCount),
             expires: record.expires,
+            uploadFinished: record.uploadFinished,
             bytes: BigInt(record.bytes),
             backendID: record.backendID,
             backendURI: record.backendURI
@@ -226,28 +260,70 @@ export class DBGateway {
         return file;
     }
 
-    async finishFileUpload(filesystemID: FilesystemID, upload: FileUpload) {
-        const self = this;
+    private async deleteFileEntry(transaction: Knex.Transaction, filesystemID: FilesystemID, parentID: EntryID | null, name: string) {
+        // Find the entry and its corresponding file:
+        const entryRecord = await transaction<EntryRecord>('entries').where({
+            filesystemID: filesystemID,
+            parentID: parentID,
+            name: name,
+            entryType: 'file'
+        }).first();
+        if (!entryRecord) {
+            throw new EntryNotFoundByNameError(parentID, name);
+        }
+        await transaction('entries').where({
+            filesystemID: filesystemID,
+            entryID: entryRecord.entryID
+        }).delete();
+        // NOTE: We do not care if the file record exists or not - if someone
+        //  (the cleanup component) has removed it, they've saved us the trouble!
+        await transaction('files').where({
+            filesystemID: filesystemID,
+            fileID: entryRecord.fileID!
+        }).decrement('referenceCount', 1);
+    }
+
+    private async createFileEntry(transaction: Knex.Transaction, filesystemID: FilesystemID, parentID: EntryID | null, name: string, fileID: FileID, replace = false) {
         const entryID = await this.obtainValueFromSequence(this.db, this.getSequenceNameForFilesystem(filesystemID));
         const entryRecord = {
             filesystemID: filesystemID,
             entryID: entryID,
-            parentID: upload.parentID,
-            name: upload.name,
+            parentID: parentID,
+            name: name,
             entryType: 'file',
-            fileID: upload.fileID
+            fileID: fileID
         };
+        if (replace) {
+            try {
+                await this.deleteFileEntry(transaction, filesystemID, parentID, name);
+            } catch (error) {
+                // Ignore errors that say the file is already deleted:
+                if (!(error instanceof EntryNotFoundByNameError)) {
+                    throw error;
+                }
+            }
+        }
+        await transaction('entries').insert(entryRecord);
+        await transaction('files').increment('referenceCount', 1).where({
+            filesystemID: filesystemID,
+            fileID: fileID
+        });
+        return entryRecord;
+    }
+
+    async finishFileUpload(filesystemID: FilesystemID, upload: FileUpload) {
+        const self = this;
         try {
-            await this.db.transaction(async function(transaction) {
+            return await self.db.transaction(async function(transaction) {
                 await transaction('files').update({
-                    expires: null
+                    expires: null,
+                    uploadFinished: true
                 }).where({
                     filesystemID: filesystemID,
                     fileID: upload.fileID
                 });
-                await transaction('entries').insert(entryRecord);
+                return self.createFileEntry(transaction, filesystemID, upload.parentID, upload.name, upload.fileID, upload.replace)
             });
-            return entryRecord;
         } catch (error) {
             if (error.code === SQL_FOREIGN_KEY_VIOLATION) {
                 throw new NoParentDirectoryError(upload.parentID!);

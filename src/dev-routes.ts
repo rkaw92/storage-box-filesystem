@@ -1,5 +1,5 @@
 import { FastifyInstance } from "fastify";
-import { getTokenGenerator, getTokenVerifier } from "./infrastructure/tokens";
+import { getTokenGenerator, getTokenVerifier } from "./infrastructure/authTokens";
 import { Capability, isCapability } from "./types/Capability";
 
 const tokenSecret = 'Upshot2imply3Top';

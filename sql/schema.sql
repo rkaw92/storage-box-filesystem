@@ -42,6 +42,7 @@ CREATE TABLE files (
     "backendID" BIGINT NOT NULL,
     "backendURI" TEXT NOT NULL,
     "expires" TIMESTAMP WITH TIME ZONE,
+    "uploadFinished" BOOLEAN NOT NULL DEFAULT FALSE,
     "bytes" BIGINT NOT NULL DEFAULT 0,
     CONSTRAINT "files_primary" PRIMARY KEY ("filesystemID", "fileID")
 );

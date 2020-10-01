@@ -1,7 +1,7 @@
 import { FastifyInstance, FastifyRequest } from "fastify";
 import { FilesystemFactory } from "../Filesystem";
 import { EntryID, FileID } from "../types/IDs";
-import { FileUploadStart, FileUpload } from "../types/Inputs";
+import { FileUploadStart, FileUpload, FileUploadUntrusted } from "../types/Inputs";
 
 interface AliasParams {
     alias: string;
@@ -30,17 +30,14 @@ interface UploadStartRequest {
     };
 }
 
-interface UploadParams extends AliasParams {
-    fileID: FileID;
-}
+interface UploadParams extends AliasParams {}
 
 interface UploadFileRequest {
     Params: UploadParams;
     Querystring: {
-        parentID: FileUpload["parentID"];
-        name: FileUpload["name"];
+        token: string;
     };
-    Body: FileUpload["stream"];
+    Body: FileUploadUntrusted["stream"];
 }
 
 interface FileGetRequestParams extends AliasParams {
@@ -108,7 +105,9 @@ export default function getRouteInstaller({
                                 type: 'object',
                                 properties: {
                                     bytes: { type: 'number' },
-                                    type: { type: 'string' }
+                                    type: { type: 'string' },
+                                    parentID: { type: 'string' },
+                                    name: { type: 'string' }
                                 }
                             }
                         }
@@ -126,28 +125,24 @@ export default function getRouteInstaller({
             isolatedApp.addContentTypeParser('application/json', async function(request: FastifyRequest, body: any) {
                 return body;
             });
-            app.post<UploadFileRequest>('/fs/:alias/upload/:fileID', {
+            app.post<UploadFileRequest>('/fs/:alias/upload/finish', {
                 schema: {
                     params: {
-                        alias: { type: 'string' },
-                        fileID: { type: 'string' }
+                        alias: { type: 'string' }
                     },
                     querystring: {
                         type: 'object',
                         properties: {
-                            parentID: { type: 'string' },
-                            name: { type: 'string' },
+                            token: { type: 'string' }
                         },
-                        required: [ 'parentID', 'name' ]
+                        required: [ 'token' ]
                     }
                 }
             }, async function(request) {
                 const filesystem = await filesystemFactory.getFilesystemByAlias(request.params.alias);
                 return await filesystem.uploadFile(request.userContext!, {
-                    fileID: request.params.fileID,
                     stream: request.body,
-                    parentID: request.query.parentID,
-                    name: request.query.name
+                    token: request.query.token
                 });
             });
         });

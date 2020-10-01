@@ -27,5 +27,13 @@ export interface FileRecord {
     backendID: string;
     backendURI: string;
     expires: Date;
+    uploadFinished: boolean;
     bytes: string;
 };
+
+export function isFileRecord(input: { [key: string]: any }): input is FileRecord {
+    return (
+        typeof input.filesystemID === 'string' &&
+        typeof input.fileID === 'string'
+    );
+}

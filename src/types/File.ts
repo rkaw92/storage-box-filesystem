@@ -6,5 +6,6 @@ export interface File extends BackendObjectIdentification {
     fileID: FileID;
     referenceCount: BigInt;
     expires: Date | null;
+    uploadFinished: boolean;
     bytes: BigInt;
 };

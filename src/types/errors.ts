@@ -1,4 +1,4 @@
-import { EntryID, FileID } from "./IDs";
+import { EntryID, FileID, ParentID } from "./IDs";
 
 export class AppError extends Error {
     statusCode: number;
@@ -7,6 +7,13 @@ export class AppError extends Error {
         super(message);
         this.statusCode = statusCode;
         this.name = new.target.name;
+        Error.captureStackTrace(this, new.target);
+    }
+};
+
+export class Bug extends AppError {
+    constructor(message: string) {
+        super(`BUG: ${message}`, 500);
     }
 };
 
@@ -51,9 +58,23 @@ export class EntryNotFoundError extends AppError {
     }
 };
 
+export class EntryNotFoundByNameError extends AppError {
+    constructor(parentID: ParentID, name: string) {
+        super(`Entry "${name}" not found in directory "${parentID}"`, 404);
+        this.data = { parentID, name };
+    }
+};
+
 export class FileNotFoundError extends AppError {
     constructor(fileID: FileID) {
         super(`File not found: ${fileID}`, 404);
+        this.data = { fileID };
+    }
+};
+
+export class FileAlreadyUploadedError extends AppError {
+    constructor(fileID: FileID) {
+        super(`File already uploaded - cannot overwrite: ${fileID}`, 409);
         this.data = { fileID };
     }
 };
@@ -62,5 +83,12 @@ export class CannotDownloadDirectoryError extends AppError {
     constructor(entryID: EntryID) {
         super(`Entry ${entryID} is a directory and cannot be downloaded using this method`, 400);
         this.data = { entryID };
+    }
+};
+
+export class CannotReplaceDirectoryWithFileError extends AppError {
+    constructor(existingEntryID: EntryID) {
+        super(`Entry ${existingEntryID} is a directory and cannot be replaced by a file`, 409);
+        this.data = { existingEntryID };
     }
 };
