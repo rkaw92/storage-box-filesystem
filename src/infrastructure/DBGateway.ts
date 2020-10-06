@@ -34,6 +34,10 @@ export class DBGateway {
         return `files_seq_${filesystemID}`;
     }
 
+    private getPartitionName(parentName: string, filesystemID: FilesystemRecordID) {
+        return `${parentName}_${filesystemID}`;
+    }
+
     private async obtainValueFromSequence(connection: Knex, sequenceName: string) {
         const nextvals = await connection.select(connection.raw('nextval(\'??\') AS "value"', [ sequenceName ]));
         return nextvals[0].value;
@@ -91,6 +95,14 @@ export class DBGateway {
             for (let sequenceName of sequenceNames) {
                 await transaction.raw('CREATE SEQUENCE ??', sequenceName);
             }
+            for (let parentName of [ 'entries', 'entry_permissions', 'files', 'files_derivatives' ]) {
+                // NOTE: We need to flatten this to a string because otherwise we'd get a "prepared statement" with a placeholder like $1 and these do not play well with CREATE TABLE.
+                // Mildly related: https://github.com/knex/knex/issues/1207
+                const partitionCreationSQL = transaction.raw('CREATE TABLE ?? PARTITION OF ?? FOR VALUES IN (?)', [ self.getPartitionName(parentName, filesystemID), parentName, filesystemID ]).toString();
+                await transaction.raw(partitionCreationSQL);
+            }
+            // Add a trigger to our new partition - BEFORE triggers must be added manually since they cannot be created on partition parents.
+            await transaction.raw('CREATE TRIGGER entries_path_initial BEFORE INSERT OR UPDATE OF "parentID" ON ?? FOR EACH ROW EXECUTE FUNCTION compute_path_initial()', [ self.getPartitionName('entries', filesystemID) ]);
             
             return {
                 filesystemID,
