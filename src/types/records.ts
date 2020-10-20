@@ -1,13 +1,11 @@
+import { AttributeSelector } from "./AttributeSelector";
+import { FilesystemPermissions } from "./FilesystemPermissions";
+
 export type FilesystemRecordID = string;
 export type EntryRecordID = string;
 
-export interface FilesystemPermissionsRecord {
+export interface FilesystemPermissionsRecord extends FilesystemPermissions, AttributeSelector {
     filesystemID: string;
-    issuer: string;
-    subject: string;
-    canRead: boolean;
-    canWrite: boolean;
-    canManage: boolean;
 };
 
 export interface EntryRecord {

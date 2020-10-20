@@ -33,7 +33,7 @@ export class FilesystemNotFoundByAliasError extends AppError {
 
 export class NoFilesystemPermissionError extends AppError {
     constructor(permissionName: string) {
-        super(`Insufficient permissions: to perform this action on the filesystem, you need permission ${permissionName}`);
+        super(`Insufficient permissions: to perform this action on the filesystem, you need permission ${permissionName}`, 403);
         this.data = { permissionName };
     }
 };

@@ -2,6 +2,7 @@ import Knex from 'knex';
 import { UserIdentification } from '../types/UserIdentification';
 import { AppError, NoParentDirectoryError, DuplicateEntryNameError, FileNotFoundError, EntryNotFoundError, EntryNotFoundByNameError } from '../types/errors';
 import { FilesystemPermissionsRecord, FilesystemRecordID, FileRecord, EntryRecord } from '../types/records';
+import { AttributeSelector } from "../types/AttributeSelector";
 import { FilesystemPermissions } from '../types/FilesystemPermissions';
 import { FilesystemID, EntryID, FileID, ParentID } from '../types/IDs';
 import { File } from '../types/File';
@@ -9,6 +10,7 @@ import { FileDataUploadStart, FileUpload } from '../types/Inputs';
 import { FileEntry } from '../types/FileEntry';
 import { DirectoryEntry } from '../types/DirectoryEntry';
 import { Entry } from '../types/Entry';
+import { UserAttributes } from '../types/UserAttributes';
 
 const SQL_FOREIGN_KEY_VIOLATION = '23503';
 const SQL_UNIQUE_CONSTRAINT_VIOLATION = '23505';
@@ -19,6 +21,14 @@ const MINIMUM_BYTES_PER_SECOND = MINIMUM_BITS_PER_SECOND / 8;
 const MINIMUM_TIME = 5 * ONE_MINUTE;
 
 const entryColumns = [ 'filesystemID', 'entryID', 'parentID', 'name', 'entryType', 'fileID', 'lastModified' ];
+
+function applyAttributeBasedWhere(query: Knex.QueryBuilder<any>, user: UserAttributes) {
+    for (const [ attribute, values ] of Object.entries(user.attributes)) {
+        query.orWhere(function() {
+            this.where({ attribute: attribute }).andWhereRaw('value = ANY(?)', [ values ]);
+        });
+    }
+}
 
 export class DBGateway {
     private db: Knex;
@@ -48,15 +58,20 @@ export class DBGateway {
         return nextvals.map(({ nextval }) => nextval);
     }
 
-    async listFilesystems(user: UserIdentification) {
-        const filesystems = await this.db('filesystem_permissions')
-            .select('filesystem_permissions.filesystemID', 'name', 'alias')
-            .leftJoin('filesystems', 'filesystem_permissions.filesystemID', 'filesystems.filesystemID')
-            .where({
-                issuer: user.issuer,
-                subject: user.subject,
-                canRead: true
-            });
+    private getFilesystemPermissionSubquery(user: UserAttributes, permissions: Partial<FilesystemPermissions>) {
+        return this.db('filesystem_permissions').select('filesystemID').where({
+            issuer: user.issuer,
+            ...permissions
+        }).andWhere(function() {
+            // I'm not too fond of the mutation+"this" based API. Here's why:
+            applyAttributeBasedWhere(this, user);
+        });
+    }
+
+    async listFilesystems(user: UserAttributes) {
+        const filesystems = await this.db('filesystems')
+            .select('filesystemID', 'name', 'alias')
+            .whereIn('filesystemID', this.getFilesystemPermissionSubquery(user, { canRead: true }))
         return filesystems;
     }
 
@@ -71,7 +86,7 @@ export class DBGateway {
         }
     }
 
-    async createFilesystem(initialManager: UserIdentification, name: string, alias: string) {
+    async createFilesystem(initialPermissionsFor: AttributeSelector[], name: string, alias: string) {
         const self = this;
         return await this.db.transaction(async function(transaction) {
             const filesystemID = await self.obtainValueFromSequence(transaction, 'filesystems_seq');
@@ -80,14 +95,16 @@ export class DBGateway {
                 name: name,
                 alias: alias
             });
-            await transaction('filesystem_permissions').insert({
+            
+            await transaction('filesystem_permissions').insert(initialPermissionsFor.map(({ issuer, attribute, value }) => ({
                 filesystemID: filesystemID,
-                issuer: initialManager.issuer,
-                subject: initialManager.subject,
+                issuer: issuer,
+                attribute: attribute,
+                value: value,
                 canRead: true,
                 canWrite: true,
                 canManage: true
-            });
+            })));
             const sequenceNames = [
                 self.getSequenceNameForFilesystem(filesystemID),
                 self.getSequenceNameForFiles(filesystemID)
@@ -102,8 +119,8 @@ export class DBGateway {
                 await transaction.raw(partitionCreationSQL);
             }
             // Add a trigger to our new partition - BEFORE triggers must be added manually since they cannot be created on partition parents.
+            // TODO: This restriction is supposedly lifted in PostgreSQL 13.x - check and decide whether we should require Postgres 13.
             await transaction.raw('CREATE TRIGGER entries_path_initial BEFORE INSERT OR UPDATE OF "parentID" ON ?? FOR EACH ROW EXECUTE FUNCTION compute_path_initial()', [ self.getPartitionName('entries', filesystemID) ]);
-            
             return {
                 filesystemID,
                 name,
@@ -112,24 +129,28 @@ export class DBGateway {
         });
     }
 
-    async getFilesystemPermissions(user: UserIdentification, filesystemID: FilesystemID): Promise<FilesystemPermissions> {
-        const permissionRows: FilesystemPermissionsRecord[] = await this.db('filesystem_permissions')
-            .select('canRead', 'canWrite', 'canManage')
+    async getFilesystemPermissions(user: UserAttributes, filesystemID: FilesystemID): Promise<FilesystemPermissions> {
+        const permissionRow: Record<keyof FilesystemPermissions,number | null> | null = await this.db('filesystem_permissions')
+            .first(
+                // Ask for 1 if any record has canRead = true, 0 if none of the records; NULL if we get no records that match.
+                this.db.raw('MAX("canRead"::int) AS "canRead"'),
+                this.db.raw('MAX("canWrite"::int) AS "canWrite"'),
+                this.db.raw('MAX("canManage"::int) AS "canManage"'))
             .where({
                 issuer: user.issuer,
-                subject: user.subject,
                 filesystemID: filesystemID
-            });
-        if (permissionRows.length === 0) {
+            }).andWhere(function() {
+                applyAttributeBasedWhere(this, user);
+            })
+        if (permissionRow) {
             return {
-                canRead: false,
-                canWrite: false,
-                canManage: false
+                // We need type conversion because we get 0, 1 or NULL from SQL.
+                canRead: Boolean(permissionRow.canRead),
+                canWrite: Boolean(permissionRow.canWrite),
+                canManage: Boolean(permissionRow.canManage)
             };
-        } else if (permissionRows.length === 1) {
-            return permissionRows[0];
         } else {
-            throw new AppError('Multiple permission entries for one filesystemID - this should not be possible');
+            throw new AppError(`No permission rows were retrieved from query for filesystemID ${filesystemID} - this should not be possible`);
         }
     }
 
@@ -177,6 +198,7 @@ export class DBGateway {
         const secondsAllowedToFinishUpload = Math.ceil(totalBytes / MINIMUM_BYTES_PER_SECOND) + MINIMUM_TIME;
         return await this.db.transaction(async function(transaction) {
             const fileIDs = await self.obtainValuesFromSequence(transaction, self.getSequenceNameForFiles(filesystemID), files.length);
+            // TODO: Decisions like the expiry time should probably be taken in a higher layer, not the DAL.
             const expiryDate = new Date(Date.now() + secondsAllowedToFinishUpload * 1000);
             const fileRecords: FileRecord[] = files.map((upload, index) => ({
                 filesystemID: filesystemID,

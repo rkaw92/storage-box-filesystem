@@ -66,7 +66,7 @@ export class Filesystem {
     }
 
     private async hasPermission(user: UserContext, permissionType: "canRead" | "canWrite" | "canManage") {
-        const permissions = await this.db.getFilesystemPermissions(user.identification, this.filesystemID);
+        const permissions = await this.db.getFilesystemPermissions(user.attributes, this.filesystemID);
         return permissions[permissionType];
     }
 

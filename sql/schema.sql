@@ -33,12 +33,13 @@ CREATE TABLE filesystems (
 
 CREATE TABLE filesystem_permissions (
     "issuer" TEXT NOT NULL,
-    "subject" TEXT NOT NULL,
+    "attribute" TEXT NOT NULL,
+    "value" TEXT NOT NULL,
     "filesystemID" BIGINT NOT NULL,
     "canRead" BOOLEAN NOT NULL DEFAULT FALSE,
     "canWrite" BOOLEAN NOT NULL DEFAULT FALSE,
     "canManage" BOOLEAN NOT NULL DEFAULT FALSE,
-    CONSTRAINT "filesystem_permissions_primary" PRIMARY KEY ("issuer", "subject", "filesystemID")
+    CONSTRAINT "filesystem_permissions_primary" PRIMARY KEY ("issuer", "attribute", "value", "filesystemID")
 );
 
 CREATE TYPE t_entry AS ENUM ('file', 'directory');
@@ -69,12 +70,13 @@ CREATE TRIGGER entries_path_on_update AFTER UPDATE OF path, "parentID" ON entrie
 
 CREATE TABLE entry_permissions (
     "issuer" TEXT NOT NULL,
-    "subject" TEXT NOT NULL,
+    "attribute" TEXT NOT NULL,
+    "value" TEXT NOT NULL,
     "filesystemID" BIGINT NOT NULL,
     "entryID" BIGINT NOT NULL,
     "canRead" BOOLEAN NOT NULL DEFAULT FALSE,
     "canWrite" BOOLEAN NOT NULL DEFAULT FALSE,
-    CONSTRAINT "entry_permissions_primary" PRIMARY KEY ("filesystemID", "issuer", "subject", "entryID"),
+    CONSTRAINT "entry_permissions_primary" PRIMARY KEY ("filesystemID", "issuer", "attribute", "value", "entryID"),
     CONSTRAINT "entry_permissions_entry" FOREIGN KEY ("filesystemID", "entryID") REFERENCES entries ("filesystemID", "entryID") ON DELETE CASCADE
 ) PARTITION BY LIST ("filesystemID");
 

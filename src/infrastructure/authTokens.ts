@@ -6,6 +6,7 @@ export interface TokenPayload {
     sub: string;
     // User capabilities - global permissions that operate on a higher level than individual filesystems:
     cap: Capability[];
+    attr: { [key: string]: string[] };
 };
 
 export interface TokenGenerator {
