@@ -1,9 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { getTokenGenerator, getTokenVerifier } from "./infrastructure/authTokens";
 import { Capability, isCapability } from "./types/Capability";
-
-const tokenSecret = 'Upshot2imply3Top';
-const tokenAlgorithm = 'HS256';
+import { tokenSecret, tokenAlgorithm } from "./settings/userTokenSettings";
 
 interface TokenQuery {
     Querystring: {

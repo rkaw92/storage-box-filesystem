@@ -1,6 +1,6 @@
 import { onRequestHookHandler } from "fastify";
 import { getTokenVerifier } from "../infrastructure/authTokens";
-import { tokenSecret, tokenAlgorithm } from "../settings/tokenSettings";
+import { tokenSecret, tokenAlgorithm } from "../settings/userTokenSettings";
 
 const verifyToken = getTokenVerifier({ secret: tokenSecret, algorithm: tokenAlgorithm });
 

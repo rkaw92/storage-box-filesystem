@@ -21,13 +21,13 @@ declare module "fastify" {
 const db = getDBGateway();
 const backend = new MinioBackend({
     connection: {
-        endPoint: process.env.BACKEND_ENDPOINT!,
-        port: 9000,
+        endPoint: process.env.MINIO_ENDPOINT || 'localhost',
+        port: Number(process.env.MINIO_PORT) || 9000,
         useSSL: false,
-        accessKey: process.env.BACKEND_ACCESS_KEY!,
-        secretKey: process.env.BACKEND_SECRET_KEY!
+        accessKey: process.env.MINIO_ACCESS_KEY!,
+        secretKey: process.env.MINIO_SECRET_KEY!
     },
-    bucketName: process.env.BACKEND_BUCKET_NAME!
+    bucketName: process.env.MINIO_BUCKET_NAME!
 });
 const backendManager = new SingleStorageBackendManager(backend);
 const filesystems = new Filesystems({ db });

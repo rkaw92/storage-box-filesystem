@@ -1,3 +1,4 @@
 node_modules
 .env.sh
+.env
 /manual-tests

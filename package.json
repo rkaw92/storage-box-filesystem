@@ -5,11 +5,12 @@
   "main": "dist/index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "ts-node src/server.ts"
+    "start": "node -r ts-node/register -r dotenv/config src/server.ts"
   },
   "author": "Robert Kawecki <robert+public@rkaw.pl>",
   "license": "MIT",
   "dependencies": {
+    "dotenv": "^8.2.0",
     "fastify": "^3.4.1",
     "fastify-cookie": "^4.1.0",
     "jsonwebtoken": "^8.5.1",
