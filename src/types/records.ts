@@ -12,6 +12,7 @@ export interface EntryRecord {
     filesystemID: string;
     entryID: string;
     parentID: string | null;
+    path: string[];
     name: string;
     entryType: "file" | "directory";
     fileID?: string;

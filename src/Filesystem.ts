@@ -9,6 +9,11 @@ import { isFileEntry } from "./types/FileEntry";
 import { UploadTokenHandler } from "./infrastructure/uploadTokens";
 import { FileRecord, isFileRecord } from "./types/records";
 import { ItemPlan, ItemWillUpload, ItemIsDuplicate, ItemOutput, ItemUploadStarted, ItemUploadPreventedOnDuplicate, UploadTokenPayload } from "./types/processes/StartUpload";
+import { FilesystemPermissions } from "./types/FilesystemPermissions";
+import { EntryPermissions } from "./types/EntryPermissions";
+
+type FilesystemPermissionType = keyof FilesystemPermissions;
+type EntryPermissionType = keyof EntryPermissions;
 
 function entryToKey(entry: { parentID: ParentID, name: string }) {
     return `${entry.parentID}/${entry.name}`;
@@ -65,15 +70,41 @@ export class Filesystem {
         this.uploadTokenHandler = uploadTokenHandler;
     }
 
-    private async hasPermission(user: UserContext, permissionType: "canRead" | "canWrite" | "canManage") {
+    private async hasFilesystemPermission(user: UserContext, permissionType: FilesystemPermissionType) {
         const permissions = await this.db.getFilesystemPermissions(user.attributes, this.filesystemID);
         return permissions[permissionType];
     }
 
-    async createDirectory(user: UserContext, parentID: EntryID | null, name: string) {
-        if (!(await this.hasPermission(user, 'canWrite'))) {
-            throw new NoFilesystemPermissionError('canWrite');
+    private async hasEntryPermission(user: UserContext, permissionType: EntryPermissionType, entryID: EntryID) {
+        const permissions = await this.db.getEntryPermissions(user.attributes, this.filesystemID, entryID);
+        return permissions[permissionType];
+    }
+
+    private async hasEntryPermissionByPath(user: UserContext, permissionType: EntryPermissionType, path: EntryID[]) {
+        const permissions = await this.db.getEntryPermissionsByPath(user.attributes, this.filesystemID, path);
+        return permissions[permissionType];
+    }
+
+    private async checkEntryPermission(user: UserContext, permissionType: EntryPermissionType, entryID: EntryID | null) {
+        const filesystemPermissionPromise = this.hasFilesystemPermission(user, permissionType);
+        const entryPermissionPromise = entryID ? this.hasEntryPermission(user, permissionType, entryID) : Promise.resolve(false);
+        const permissions = await Promise.all([ filesystemPermissionPromise, entryPermissionPromise ]);
+        if (!permissions.some((hasAccess) => hasAccess === true)) {
+            throw new NoFilesystemPermissionError(permissionType);
         }
+    }
+
+    private async checkEntryPermissionByPath(user: UserContext, permissionType: EntryPermissionType, path: EntryID[]) {
+        const filesystemPermissionPromise = this.hasFilesystemPermission(user, permissionType);
+        const entryPermissionPromise = this.hasEntryPermissionByPath(user, permissionType, path);
+        const permissions = await Promise.all([ filesystemPermissionPromise, entryPermissionPromise ]);
+        if (!permissions.some((hasAccess) => hasAccess === true)) {
+            throw new NoFilesystemPermissionError(permissionType);
+        }
+    }
+
+    async createDirectory(user: UserContext, parentID: EntryID | null, name: string) {
+        await this.checkEntryPermission(user, 'canWrite', parentID);
         try {
             return await this.db.createDirectory(this.filesystemID, parentID, name);
         } catch (error) {
@@ -83,15 +114,14 @@ export class Filesystem {
     }
 
     async listDirectory(user: UserContext, directoryID: EntryID | null) {
-        if (!(await this.hasPermission(user, 'canRead'))) {
-            throw new NoFilesystemPermissionError('canRead');
-        }
+        await this.checkEntryPermission(user, 'canRead', directoryID);
         return await this.db.listDirectory(this.filesystemID, directoryID);
     }
 
     async startFileUpload(user: UserContext, files: FileUploadStart[]): Promise<ItemOutput[]> {
-        if (!(await this.hasPermission(user, 'canWrite'))) {
-            throw new NoFilesystemPermissionError('canWrite');
+        const parentIDs = new Set(files.map((upload) => upload.parentID));
+        for (let parentID of parentIDs.values()) {
+            await this.checkEntryPermission(user, 'canWrite', parentID);
         }
         // First, find out if the files already exist in their target directories.
         // This will determine whether or not we can safely start an upload to that location.
@@ -158,10 +188,8 @@ export class Filesystem {
     }
 
     async uploadFile(user: UserContext, uploadUntrusted: FileUploadUntrusted) {
-        if (!(await this.hasPermission(user, 'canWrite'))) {
-            throw new NoFilesystemPermissionError('canWrite');
-        }
         const upload = this.uploadTokenHandler.verify(uploadUntrusted.token);
+        await this.checkEntryPermission(user, 'canWrite', upload.parentID);
 
         const { backendID, backendURI, uploadFinished } = await this.db.getFile(this.filesystemID, upload.fileID);
         if (uploadFinished) {
@@ -173,10 +201,8 @@ export class Filesystem {
     }
 
     async getFileDownloadURL(user: UserContext, entryID: EntryID) {
-        if (!(await this.hasPermission(user, 'canRead'))) {
-            throw new NoFilesystemPermissionError('canRead');
-        }
         const entry = await this.db.getEntry(this.filesystemID, entryID);
+        await this.checkEntryPermissionByPath(user, 'canRead', entry.path);
         if (!isFileEntry(entry)) {
             throw new CannotDownloadDirectoryError(entryID);
         }

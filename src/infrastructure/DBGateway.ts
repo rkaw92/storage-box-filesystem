@@ -11,6 +11,7 @@ import { FileEntry } from '../types/FileEntry';
 import { DirectoryEntry } from '../types/DirectoryEntry';
 import { Entry } from '../types/Entry';
 import { UserAttributes } from '../types/UserAttributes';
+import { EntryPermissions } from '../types/EntryPermissions';
 
 const SQL_FOREIGN_KEY_VIOLATION = '23503';
 const SQL_UNIQUE_CONSTRAINT_VIOLATION = '23505';
@@ -20,7 +21,7 @@ const MINIMUM_BITS_PER_SECOND = 1000000;
 const MINIMUM_BYTES_PER_SECOND = MINIMUM_BITS_PER_SECOND / 8;
 const MINIMUM_TIME = 5 * ONE_MINUTE;
 
-const entryColumns = [ 'filesystemID', 'entryID', 'parentID', 'name', 'entryType', 'fileID', 'lastModified' ];
+const entryColumns = [ 'filesystemID', 'entryID', 'parentID', 'path', 'name', 'entryType', 'fileID', 'lastModified' ];
 
 function applyAttributeBasedWhere(query: Knex.QueryBuilder<any>, user: UserAttributes) {
     for (const [ attribute, values ] of Object.entries(user.attributes)) {
@@ -152,6 +153,36 @@ export class DBGateway {
         } else {
             throw new AppError(`No permission rows were retrieved from query for filesystemID ${filesystemID} - this should not be possible`);
         }
+    }
+
+    async getEntryPermissions(user: UserAttributes, filesystemID: FilesystemID, entryID: EntryID): Promise<EntryPermissions> {
+        const entry = await this.getEntry(filesystemID, entryID);
+        return this.getEntryPermissionsByPath(user, filesystemID, entry.path);
+    }
+
+    async getEntryPermissionsByPath(user: UserAttributes, filesystemID: FilesystemID, path: EntryID[]): Promise<EntryPermissions> {
+        const permissionRow: Record<keyof FilesystemPermissions,number | null> | null = await this.db('entry_permissions')
+            .first(
+                // Ask for 1 if any record has canRead = true, 0 if none of the records; NULL if we get no records that match.
+                this.db.raw('MAX("canRead"::int) AS "canRead"'),
+                this.db.raw('MAX("canWrite"::int) AS "canWrite"'))
+            .where({
+                issuer: user.issuer,
+                filesystemID: filesystemID
+            })
+            .andWhereRaw('"entryID" = ANY(?)', [ path ])
+            .andWhere(function() {
+                applyAttributeBasedWhere(this, user);
+            });
+            if (permissionRow) {
+                return {
+                    // We need type conversion because we get 0, 1 or NULL from SQL.
+                    canRead: Boolean(permissionRow.canRead),
+                    canWrite: Boolean(permissionRow.canWrite)
+                };
+            } else {
+                throw new AppError(`No permission rows were retrieved from query for entry path ${path.join(',')} in filesystemID ${filesystemID} - this should not be possible`);
+            }
     }
 
     async createDirectory(filesystemID: FilesystemID, parentID: EntryID | null, name: string) {
