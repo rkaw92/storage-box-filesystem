@@ -340,12 +340,6 @@ export class DBGateway {
             filesystemID: filesystemID,
             entryID: entryRecord.entryID
         }).delete();
-        // NOTE: We do not care if the file record exists or not - if someone
-        //  (the cleanup component) has removed it, they've saved us the trouble!
-        await transaction('files').where({
-            filesystemID: filesystemID,
-            fileID: entryRecord.fileID!
-        }).decrement('referenceCount', 1);
     }
 
     private async createFileEntry(transaction: Knex.Transaction, filesystemID: FilesystemID, parentID: EntryID | null, name: string, fileID: FileID, replace = false) {
@@ -369,10 +363,6 @@ export class DBGateway {
             }
         }
         await transaction('entries').insert(entryRecord);
-        await transaction('files').increment('referenceCount', 1).where({
-            filesystemID: filesystemID,
-            fileID: fileID
-        });
         return entryRecord;
     }
 

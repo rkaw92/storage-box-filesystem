@@ -20,6 +20,26 @@ BEGIN
 END
 $BODY$;
 
+CREATE OR REPLACE FUNCTION increment_refcount_after_upload()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $BODY$
+BEGIN
+    UPDATE files SET "referenceCount" = "referenceCount" + 1 WHERE "filesystemID" = NEW."filesystemID" AND "fileID" = NEW."fileID";
+    RETURN NEW;
+END
+$BODY$;
+
+CREATE OR REPLACE FUNCTION decrement_refcount_after_delete()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $BODY$
+BEGIN
+    UPDATE files SET "referenceCount" = "referenceCount" - 1 WHERE "filesystemID" = OLD."filesystemID" AND "fileID" = OLD."fileID";
+    RETURN OLD;
+END
+$BODY$;
+
 BEGIN;
 
 CREATE SEQUENCE filesystems_seq;
@@ -67,6 +87,8 @@ CREATE INDEX path_gin_idx ON entries USING GIN (path);
 -- EXECUTE FUNCTION compute_path_initial();
 
 CREATE TRIGGER entries_path_on_update AFTER UPDATE OF path, "parentID" ON entries FOR EACH ROW WHEN (OLD."entryType" = 'directory' OR NEW."entryType" = 'directory') EXECUTE FUNCTION compute_path_for_children();
+CREATE TRIGGER entries_file_on_upload AFTER INSERT ON entries FOR EACH ROW WHEN (NEW."entryType" = 'file') EXECUTE FUNCTION increment_refcount_after_upload();
+CREATE TRIGGER entries_file_on_delete AFTER DELETE ON entries FOR EACH ROW WHEN (OLD."entryType" = 'file') EXECUTE FUNCTION decrement_refcount_after_delete();
 
 CREATE TABLE entry_permissions (
     "issuer" TEXT NOT NULL,
