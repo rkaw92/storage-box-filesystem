@@ -39,4 +39,8 @@ export class MinioBackend implements StorageBackend {
             'response-content-disposition': `attachment; filename=${targetName}`
         });
     }
+
+    async deleteFile(URI: string) {
+        return await this.client.removeObject(this.bucketName, URI);
+    }
 };

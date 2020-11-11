@@ -11,6 +11,7 @@ import { FilesystemFactory } from './Filesystem';
 import { MinioBackend } from './infrastructure/backends/MinioBackend';
 import { SingleStorageBackendManager } from './infrastructure/SingleStorageBackendManager';
 import { UploadTokenHandler } from './infrastructure/uploadTokens';
+import { FileCleanup } from './FileCleanup';
 
 declare module "fastify" {
     interface FastifyRequest {
@@ -51,3 +52,13 @@ app.register(devRoutes(), {
 app.register(filesystemsRoutes({ filesystems }))
 app.register(filesystemRoutes({ filesystemFactory }));
 app.listen(Number(process.env.HTTP_PORT || 3001));
+
+// TODO: Move the cleanup component to a separate runnable.
+const cleanupComponent = new FileCleanup({
+    db,
+    storageBackendRepository: backendManager
+});
+// TODO: Customize the interval via config
+setInterval(function() {
+    cleanupComponent.cleanup();
+}, 15000);

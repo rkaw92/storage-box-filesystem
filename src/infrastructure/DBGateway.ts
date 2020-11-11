@@ -22,6 +22,7 @@ const MINIMUM_BYTES_PER_SECOND = MINIMUM_BITS_PER_SECOND / 8;
 const MINIMUM_TIME = 5 * ONE_MINUTE;
 
 const entryColumns = [ 'filesystemID', 'entryID', 'parentID', 'path', 'name', 'entryType', 'fileID', 'lastModified' ];
+const fileColumns = [ 'filesystemID', 'fileID', 'referenceCount', 'backendID', 'backendURI', 'expires', 'uploadFinished', 'bytes' ];
 
 function applyAttributeBasedWhere(query: Knex.QueryBuilder<any>, user: UserAttributes) {
     for (const [ attribute, values ] of Object.entries(user.attributes)) {
@@ -267,6 +268,19 @@ export class DBGateway {
         }
     }
 
+    private fileFromRecord(record: FileRecord): File {
+        return {
+            filesystemID: record.filesystemID,
+            fileID: record.fileID,
+            referenceCount: BigInt(record.referenceCount),
+            expires: record.expires,
+            uploadFinished: record.uploadFinished,
+            bytes: BigInt(record.bytes),
+            backendID: record.backendID,
+            backendURI: record.backendURI
+        };
+    }
+
     async getEntriesByPaths(filesystemID: FilesystemID, paths: Array<{ parentID: ParentID, name: string }>): Promise<Entry[]> {
         const uniqueParentIDs = new Set(paths.map((path) => path.parentID));
         let query;
@@ -312,7 +326,7 @@ export class DBGateway {
 
     async getFile(filesystemID: FilesystemID, fileID: FileID) {
         const record: FileRecord | undefined = await this.db('files')
-            .first('filesystemID', 'fileID', 'referenceCount', 'backendID', 'backendURI', 'expires', 'uploadFinished', 'bytes')
+            .first(fileColumns)
             .where({
                 filesystemID: filesystemID,
                 fileID: fileID
@@ -409,5 +423,29 @@ export class DBGateway {
             }
             throw error;
         }
+    }
+
+    async processExpiredFiles(processingFunction: (file: File) => Promise<void>, limit = 20, date = new Date()) {
+        const self = this;
+        await self.db.transaction(async function(transaction) {
+            const fileRecords: Array<FileRecord> = await transaction('files')
+                .select(fileColumns)
+                .forUpdate()
+                .where('referenceCount', '=', '0')
+                .andWhere('expires', '<=', date)
+                .limit(limit);
+            await Promise.all(fileRecords.map(async function(record) {
+                const file = self.fileFromRecord(record);
+                try {
+                    await processingFunction(file);
+                    await transaction('files').delete().where({
+                        filesystemID: file.filesystemID,
+                        fileID: file.fileID
+                    });
+                } catch (_error) {
+                    // TODO: How do we report failure?
+                }
+            }));
+        });
     }
 };
