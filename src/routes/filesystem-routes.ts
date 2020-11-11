@@ -26,6 +26,17 @@ interface DeleteRequest {
     Params: DeleteParams;
 }
 
+interface MoveParams extends AliasParams {
+    entryID: EntryID;
+}
+
+interface MoveRequest {
+    Params: MoveParams;
+    Body: {
+        targetParentID: EntryID | null;
+    }
+}
+
 interface DirectoryListingRequest {
     Params: ListParams;
 }
@@ -89,6 +100,23 @@ export default function getRouteInstaller({
             const filesystem = await filesystemFactory.getFilesystemByAlias(request.params.alias);
             await filesystem.deleteEntry(request.userContext!, request.params.entryID);
             return response.status(204).send();
+        });
+        app.post<MoveRequest>('/fs/:alias/entries/:entryID/move', {
+            schema: {
+                params: {
+                    alias: { type: 'string' }
+                },
+                body: {
+                    type: 'object',
+                    properties: {
+                        targetParentID: { type: [ 'string', 'null' ] }
+                    }
+                }
+            }
+        }, async function(request, response) {
+            const filesystem = await filesystemFactory.getFilesystemByAlias(request.params.alias);
+            await filesystem.moveEntry(request.userContext!, request.params.entryID, request.body.targetParentID);
+            return response.status(200).send();
         });
         app.get<DirectoryListingRequest>('/fs/:alias/list', async function(request) {
             const filesystem = await filesystemFactory.getFilesystemByAlias(request.params.alias);

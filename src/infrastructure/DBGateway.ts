@@ -448,4 +448,13 @@ export class DBGateway {
             }));
         });
     }
+
+    async moveEntry(filesystemID: FilesystemID, entryID: EntryID, targetParentID: EntryID | null) {
+        await this.db('entries').update({
+            parentID: targetParentID
+        }).where({
+            filesystemID: filesystemID,
+            entryID: entryID
+        });
+    }
 };

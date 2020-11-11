@@ -1,6 +1,6 @@
 import { DBGateway } from "./infrastructure/DBGateway";
 import { UserContext } from "./types/UserContext";
-import { FilesystemNotFoundByAliasError, NoFilesystemPermissionError, CannotDownloadDirectoryError, FileAlreadyUploadedError, Bug, CannotReplaceDirectoryWithFileError } from "./types/errors";
+import { FilesystemNotFoundByAliasError, NoFilesystemPermissionError, CannotDownloadDirectoryError, FileAlreadyUploadedError, Bug, CannotReplaceDirectoryWithFileError, TargetIsNotDirectoryError, DirectoryCycleError } from "./types/errors";
 import { FilesystemID, EntryID, FileID, ParentID } from "./types/IDs";
 import { FileUploadStart, FileUpload, isFileDataUploadStart, FileUploadUntrusted } from "./types/Inputs";
 import { StorageBackendSelector } from "./types/StorageBackendSelector";
@@ -11,6 +11,7 @@ import { FileRecord, isFileRecord } from "./types/records";
 import { ItemPlan, ItemWillUpload, ItemIsDuplicate, ItemOutput, ItemUploadStarted, ItemUploadPreventedOnDuplicate, UploadTokenPayload } from "./types/processes/StartUpload";
 import { FilesystemPermissions } from "./types/FilesystemPermissions";
 import { EntryPermissions } from "./types/EntryPermissions";
+import { isDirectoryEntry } from "./types/DirectoryEntry";
 
 type FilesystemPermissionType = keyof FilesystemPermissions;
 type EntryPermissionType = keyof EntryPermissions;
@@ -229,5 +230,22 @@ export class Filesystem {
     async deleteEntry(user: UserContext, entryID: EntryID) {
         await this.checkEntryParentPermission(user, 'canWrite', entryID);
         await this.db.deleteEntry(this.filesystemID, entryID);
+    }
+
+    async moveEntry(user: UserContext, entryID: EntryID, targetParentID: EntryID | null) {
+        await this.checkEntryParentPermission(user, 'canWrite', entryID);
+        await this.checkEntryPermission(user, 'canWrite', targetParentID);
+        if (targetParentID) {
+            // If the target entry is specified, make sure it's an actual directory and not a file:
+            const target = await this.db.getEntry(this.filesystemID, targetParentID);
+            if (!isDirectoryEntry(target)) {
+                throw new TargetIsNotDirectoryError(targetParentID);
+            }
+            // Also make sure it's not our descendant:
+            if (target.path.includes(entryID)) {
+                throw new DirectoryCycleError(entryID, targetParentID);
+            }
+        }
+        await this.db.moveEntry(this.filesystemID, entryID, targetParentID);
     }
 };

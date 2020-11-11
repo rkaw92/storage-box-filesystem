@@ -92,3 +92,17 @@ export class CannotReplaceDirectoryWithFileError extends AppError {
         this.data = { existingEntryID };
     }
 };
+
+export class TargetIsNotDirectoryError extends AppError {
+    constructor(targetEntryID: EntryID) {
+        super(`Target entry ${targetEntryID} is not a directory`, 409);
+        this.data = { targetEntryID };
+    }
+};
+
+export class DirectoryCycleError extends AppError {
+    constructor(entryID: EntryID, targetEntryID: EntryID) {
+        super(`Cannot move entry ${entryID} into ${targetEntryID} - the target directory is a descendant of the moved entry`, 409);
+        this.data = { targetEntryID };
+    }
+};
