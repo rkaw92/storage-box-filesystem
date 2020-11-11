@@ -80,6 +80,11 @@ export class Filesystem {
         return permissions[permissionType];
     }
 
+    private async hasEntryParentPermission(user: UserContext, permissionType: EntryPermissionType, entryID: EntryID) {
+        const permissions = await this.db.getParentPermissions(user.attributes, this.filesystemID, entryID);
+        return permissions[permissionType];
+    }
+
     private async hasEntryPermissionByPath(user: UserContext, permissionType: EntryPermissionType, path: EntryID[]) {
         const permissions = await this.db.getEntryPermissionsByPath(user.attributes, this.filesystemID, path);
         return permissions[permissionType];
@@ -88,6 +93,15 @@ export class Filesystem {
     private async checkEntryPermission(user: UserContext, permissionType: EntryPermissionType, entryID: EntryID | null) {
         const filesystemPermissionPromise = this.hasFilesystemPermission(user, permissionType);
         const entryPermissionPromise = entryID ? this.hasEntryPermission(user, permissionType, entryID) : Promise.resolve(false);
+        const permissions = await Promise.all([ filesystemPermissionPromise, entryPermissionPromise ]);
+        if (!permissions.some((hasAccess) => hasAccess === true)) {
+            throw new NoFilesystemPermissionError(permissionType);
+        }
+    }
+
+    private async checkEntryParentPermission(user: UserContext, permissionType: EntryPermissionType, entryID: EntryID) {
+        const filesystemPermissionPromise = this.hasFilesystemPermission(user, permissionType);
+        const entryPermissionPromise = this.hasEntryParentPermission(user, permissionType, entryID);
         const permissions = await Promise.all([ filesystemPermissionPromise, entryPermissionPromise ]);
         if (!permissions.some((hasAccess) => hasAccess === true)) {
             throw new NoFilesystemPermissionError(permissionType);
@@ -210,5 +224,10 @@ export class Filesystem {
         const backend = await this.storageBackendRepository.getBackendByID(backendID);
         const downloadURL = await backend.getDownloadURL(backendURI, entry.name);
         return downloadURL;
+    }
+
+    async deleteEntry(user: UserContext, entryID: EntryID) {
+        await this.checkEntryParentPermission(user, 'canWrite', entryID);
+        await this.db.deleteEntry(this.filesystemID, entryID);
     }
 };

@@ -19,6 +19,13 @@ interface DirectoryCreationRequest {
     };
 }
 
+interface DeleteParams extends AliasParams {
+    entryID: EntryID;
+}
+interface DeleteRequest {
+    Params: DeleteParams;
+}
+
 interface DirectoryListingRequest {
     Params: ListParams;
 }
@@ -77,6 +84,10 @@ export default function getRouteInstaller({
         }, async function(request) {
             const filesystem = await filesystemFactory.getFilesystemByAlias(request.params.alias);
             return await filesystem.createDirectory(request.userContext!, request.body.parentID, request.body.name)
+        });
+        app.delete<DeleteRequest>('/fs/:alias/entries/:entryID', async function(request, response) {
+            const filesystem = await filesystemFactory.getFilesystemByAlias(request.params.alias);
+            return await filesystem.deleteEntry(request.userContext!, request.params.entryID);
         });
         app.get<DirectoryListingRequest>('/fs/:alias/list', async function(request) {
             const filesystem = await filesystemFactory.getFilesystemByAlias(request.params.alias);

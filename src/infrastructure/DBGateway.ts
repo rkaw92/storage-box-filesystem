@@ -160,6 +160,14 @@ export class DBGateway {
         return this.getEntryPermissionsByPath(user, filesystemID, entry.path);
     }
 
+    async getParentPermissions(user: UserAttributes, filesystemID: FilesystemID, entryID: EntryID): Promise<EntryPermissions> {
+        const entry = await this.getEntry(filesystemID, entryID);
+        // Cut off the last element, which is the entry's own ID.
+        // If we're evaluating an entry in the root of the filesystem, this will leave an empty array,
+        //  which is fine (we'll never have an entry permission for this, a filesystem-level permission is necessary then).
+        return this.getEntryPermissionsByPath(user, filesystemID, entry.path.slice(0, -1));
+    }
+
     async getEntryPermissionsByPath(user: UserAttributes, filesystemID: FilesystemID, path: EntryID[]): Promise<EntryPermissions> {
         const permissionRow: Record<keyof FilesystemPermissions,number | null> | null = await this.db('entry_permissions')
             .first(
@@ -325,7 +333,21 @@ export class DBGateway {
         return file;
     }
 
-    private async deleteFileEntry(transaction: Knex.Transaction, filesystemID: FilesystemID, parentID: EntryID | null, name: string) {
+    private async _deleteEntry(transaction: Knex.Transaction, filesystemID: FilesystemID, entryID: EntryID) {
+        await transaction('entries').where({
+            filesystemID: filesystemID,
+            entryID: entryID
+        }).delete();
+    }
+
+    async deleteEntry(filesystemID: FilesystemID, entryID: EntryID) {
+        const self = this;
+        return await self.db.transaction(async function(transaction) {
+            await self._deleteEntry(transaction, filesystemID, entryID);
+        });
+    }
+
+    private async _deleteFileEntryByName(transaction: Knex.Transaction, filesystemID: FilesystemID, parentID: EntryID | null, name: string) {
         // Find the entry and its corresponding file:
         const entryRecord = await transaction<EntryRecord>('entries').where({
             filesystemID: filesystemID,
@@ -336,10 +358,7 @@ export class DBGateway {
         if (!entryRecord) {
             throw new EntryNotFoundByNameError(parentID, name);
         }
-        await transaction('entries').where({
-            filesystemID: filesystemID,
-            entryID: entryRecord.entryID
-        }).delete();
+        await this._deleteEntry(transaction, filesystemID, entryRecord.entryID);
     }
 
     private async createFileEntry(transaction: Knex.Transaction, filesystemID: FilesystemID, parentID: EntryID | null, name: string, fileID: FileID, replace = false) {
@@ -354,7 +373,7 @@ export class DBGateway {
         };
         if (replace) {
             try {
-                await this.deleteFileEntry(transaction, filesystemID, parentID, name);
+                await this._deleteFileEntryByName(transaction, filesystemID, parentID, name);
             } catch (error) {
                 // Ignore errors that say the file is already deleted:
                 if (!(error instanceof EntryNotFoundByNameError)) {
