@@ -87,7 +87,8 @@ export default function getRouteInstaller({
         });
         app.delete<DeleteRequest>('/fs/:alias/entries/:entryID', async function(request, response) {
             const filesystem = await filesystemFactory.getFilesystemByAlias(request.params.alias);
-            return await filesystem.deleteEntry(request.userContext!, request.params.entryID);
+            await filesystem.deleteEntry(request.userContext!, request.params.entryID);
+            return response.status(204).send();
         });
         app.get<DirectoryListingRequest>('/fs/:alias/list', async function(request) {
             const filesystem = await filesystemFactory.getFilesystemByAlias(request.params.alias);
