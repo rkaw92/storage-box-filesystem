@@ -24,6 +24,9 @@ export class FileCleanup {
                 await backend.deleteFile(file.backendURI);
             } catch (error) {
                 console.error(error);
+                // Make sure to re-throw - otherwise, the file entry would be deleted
+                //  while the data remains on the back-end.
+                throw error;
             }
         });
     }
