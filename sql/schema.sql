@@ -5,7 +5,7 @@ RETURNS trigger
 LANGUAGE plpgsql
 AS $BODY$
 BEGIN
-    NEW.path = (SELECT path FROM entries WHERE entries."entryID" = NEW."parentID") || (NEW."entryID");
+    NEW.path = (SELECT path FROM entries WHERE entries."filesystemID" = NEW."filesystemID" AND entries."entryID" = NEW."parentID") || (NEW."entryID");
     RETURN NEW;
 END
 $BODY$;
