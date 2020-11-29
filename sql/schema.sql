@@ -15,7 +15,7 @@ RETURNS trigger
 LANGUAGE plpgsql
 AS $BODY$
 BEGIN
-    UPDATE entries SET path = (NEW.path || path[(array_position(path, OLD."entryID") + 1):]) WHERE (path && ARRAY[NEW."entryID"]) AND ("entryID" <> NEW."entryID");
+    UPDATE entries SET path = (NEW.path || path[(array_position(path, OLD."entryID") + 1):]) WHERE ("filesystemID" = NEW."filesystemID") AND (path && ARRAY[NEW."entryID"]) AND ("entryID" <> NEW."entryID");
     RETURN NEW;
 END
 $BODY$;
