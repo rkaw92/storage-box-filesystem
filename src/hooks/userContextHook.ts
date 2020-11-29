@@ -1,13 +1,33 @@
-import { onRequestHookHandler } from "fastify";
+import { FastifyRequest, onRequestHookHandler } from "fastify";
 import { getTokenVerifier } from "../infrastructure/authTokens";
 import { tokenSecret, tokenAlgorithm } from "../settings/userTokenSettings";
 
 const verifyToken = getTokenVerifier({ secret: tokenSecret, algorithm: tokenAlgorithm });
 
+function parseAuthorization(authorizationHeader: string): string {
+    const tokenRegExp = /^bearer +(.*)$/i;
+    const matches = authorizationHeader.match(tokenRegExp);
+    if (!matches) {
+        return '';
+    }
+    return matches[1];
+}
+
+function extractUserToken(request: FastifyRequest): string | null {
+    if (request.headers.authorization) {
+        return parseAuthorization(request.headers.authorization);
+    } else if (request.cookies.user) {
+        return request.cookies.user;
+    } else {
+        return null;
+    }
+}
+
 const userContextHook: onRequestHookHandler = function(request, response, next) {
     try {
-        if (request.cookies.user) {
-            const payload = verifyToken(request.cookies.user);
+        const userToken = extractUserToken(request);
+        if (userToken) {
+            const payload = verifyToken(userToken);
             request.userContext = {
                 identification: {
                     issuer: payload.iss,
