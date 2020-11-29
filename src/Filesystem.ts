@@ -263,7 +263,7 @@ export class Filesystem {
         }
         const { backendID, backendURI, mimetype, bytes } = await this.db.getFile(this.filesystemID, entry.fileID);
         const backend = await this.storageBackendRepository.getBackendByID(backendID);
-        if (supportsDownloadURLs(backend)) {
+        if (supportsDownloadURLs(backend) && backend.isDownloadURLSupportEnabled()) {
             return {
                 url: await backend.getDownloadURL(backendURI, entry.name, 'inline', mimetype)
             };

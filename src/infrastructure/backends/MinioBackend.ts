@@ -1,5 +1,5 @@
 import { Client } from 'minio';
-import { ContentDispositionType, StorageBackend } from '../../types/StorageBackend';
+import { ContentDispositionType, StorageBackend, StorageBackendDownloadURLProvider } from '../../types/StorageBackend';
 import * as uuid from 'uuid';
 import { Readable } from 'stream';
 
@@ -11,7 +11,7 @@ export interface MinioConnectionParams {
     secretKey: string;
 };
 
-export class MinioBackend implements StorageBackend {
+export class MinioBackend implements StorageBackend, StorageBackendDownloadURLProvider {
     private client: Client;
     private bucketName: string;
     constructor({
@@ -35,6 +35,10 @@ export class MinioBackend implements StorageBackend {
 
     async downloadStream(URI: string): Promise<Readable> {
         return this.client.getObject(this.bucketName, URI);
+    }
+
+    isDownloadURLSupportEnabled() {
+        return true;
     }
 
     async getDownloadURL(URI: string, targetName: string, dispositionType: ContentDispositionType = 'inline', mimetype = 'application/octet-stream') {

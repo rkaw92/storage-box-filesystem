@@ -16,5 +16,6 @@ export function supportsDownloadURLs(backend: any): backend is StorageBackendDow
 };
 
 export interface StorageBackendDownloadURLProvider {
+    isDownloadURLSupportEnabled(): boolean;
     getDownloadURL(URI: objectID, targetName: string, disposition?: ContentDispositionType, mimetype?: ContentType): Promise<string>;
 };
