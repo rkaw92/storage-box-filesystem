@@ -3,6 +3,26 @@ import { UserContext } from "./types/UserContext";
 import { NoCapabilityError } from "./types/errors";
 import { AttributeSelector } from "./types/AttributeSelector";
 import { getDefaultAttributeSelectorForUser } from "./utils/getDefaultAttributeSelectorForUser";
+import { CreateFilesystemParams, FilesystemsOperations } from '@rkaw92/storage-box-interfaces';
+
+
+export class FilesystemsProxy implements FilesystemsOperations {
+    private instance: Filesystems;
+    private context: UserContext;
+
+    constructor(instance: Filesystems, context: UserContext) {
+        this.instance = instance;
+        this.context = context;
+    }
+
+    listFilesystems() {
+        return this.instance.listFilesystems(this.context);
+    }
+
+    createFilesystem(params: CreateFilesystemParams) {
+        return this.instance.createFilesystem(this.context, params);
+    }
+}
 
 export class Filesystems {
     private db: DBGateway;
@@ -18,11 +38,11 @@ export class Filesystems {
         return this.db.listFilesystems(user.attributes);
     }
 
-    createFilesystem(user: UserContext, name: string, alias: string) {
+    createFilesystem(user: UserContext, params: CreateFilesystemParams) {
         if (user.canCreateFilesystems) {
             // Initially, the user who creates the filesystem automatically becomes its manager.
             const grantInitialPermissionsTo = [ getDefaultAttributeSelectorForUser(user.identification) ];
-            return this.db.createFilesystem(grantInitialPermissionsTo, name, alias);
+            return this.db.createFilesystem(grantInitialPermissionsTo, params.name, params.alias);
         } else {
             throw new NoCapabilityError('create-fs');
         }

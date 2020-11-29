@@ -28,6 +28,7 @@ export interface FileRecord {
     expires: Date;
     uploadFinished: boolean;
     bytes: string;
+    mimetype: string;
 };
 
 export function isFileRecord(input: { [key: string]: any }): input is FileRecord {

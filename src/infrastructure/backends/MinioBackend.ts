@@ -1,5 +1,5 @@
 import { Client } from 'minio';
-import { StorageBackend } from '../../types/StorageBackend';
+import { ContentDispositionType, StorageBackend } from '../../types/StorageBackend';
 import * as uuid from 'uuid';
 import { Readable } from 'stream';
 
@@ -33,10 +33,15 @@ export class MinioBackend implements StorageBackend {
         await this.client.putObject(this.bucketName, URI, stream);
     }
 
-    async getDownloadURL(URI: string, targetName: string) {
+    async downloadStream(URI: string): Promise<Readable> {
+        return this.client.getObject(this.bucketName, URI);
+    }
+
+    async getDownloadURL(URI: string, targetName: string, dispositionType: ContentDispositionType = 'inline', mimetype = 'application/octet-stream') {
         // TODO: Un-hardcode this expiration time
         return await this.client.presignedGetObject(this.bucketName, URI, 120, {
-            'response-content-disposition': `attachment; filename=${targetName}`
+            'response-content-disposition': `${dispositionType}; filename=${targetName}`,
+            'response-content-type': mimetype
         });
     }
 

@@ -1,11 +1,9 @@
+import { CreateFilesystemParams } from "@rkaw92/storage-box-interfaces";
 import { FastifyInstance } from "fastify";
-import { Filesystems } from "../Filesystems";
+import { Filesystems, FilesystemsProxy } from "../Filesystems";
 
 interface FilesystemCreationRequest {
-    Body: {
-        name: string;
-        alias: string;
-    };
+    Body: CreateFilesystemParams;
 }
 
 export default function getRouteInstaller({
@@ -21,7 +19,8 @@ export default function getRouteInstaller({
             }
         });
         app.get('/filesystems', async function(request, response) {
-            return await filesystems.listFilesystems(request.userContext!);
+            const proxy = new FilesystemsProxy(filesystems, request.userContext!);
+            return await proxy.listFilesystems();
         });
         app.post<FilesystemCreationRequest>('/filesystems', {
             schema: {
@@ -35,7 +34,8 @@ export default function getRouteInstaller({
                 }
             }
         }, async function(request, response) {
-            const filesystemData = await filesystems.createFilesystem(request.userContext!, request.body.name, request.body.alias);
+            const proxy = new FilesystemsProxy(filesystems, request.userContext!);
+            const filesystemData = await proxy.createFilesystem(request.body);
             response.status(201);
             return filesystemData;
         });

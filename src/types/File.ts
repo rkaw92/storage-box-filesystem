@@ -8,4 +8,5 @@ export interface File extends BackendObjectIdentification {
     expires: Date | null;
     uploadFinished: boolean;
     bytes: BigInt;
+    mimetype: string;
 };

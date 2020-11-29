@@ -12,6 +12,7 @@ import { DirectoryEntry } from '../types/DirectoryEntry';
 import { Entry } from '../types/Entry';
 import { UserAttributes } from '../types/UserAttributes';
 import { EntryPermissions } from '../types/EntryPermissions';
+import { EntryType } from '@rkaw92/storage-box-interfaces';
 
 const SQL_FOREIGN_KEY_VIOLATION = '23503';
 const SQL_UNIQUE_CONSTRAINT_VIOLATION = '23505';
@@ -22,7 +23,7 @@ const MINIMUM_BYTES_PER_SECOND = MINIMUM_BITS_PER_SECOND / 8;
 const MINIMUM_TIME = 5 * ONE_MINUTE;
 
 const entryColumns = [ 'filesystemID', 'entryID', 'parentID', 'path', 'name', 'entryType', 'fileID', 'lastModified' ];
-const fileColumns = [ 'filesystemID', 'fileID', 'referenceCount', 'backendID', 'backendURI', 'expires', 'uploadFinished', 'bytes' ];
+const fileColumns = [ 'filesystemID', 'fileID', 'referenceCount', 'backendID', 'backendURI', 'expires', 'uploadFinished', 'bytes', 'mimetype' ];
 
 function applyAttributeBasedWhere(query: Knex.QueryBuilder<any>, user: UserAttributes) {
     for (const [ attribute, values ] of Object.entries(user.attributes)) {
@@ -201,7 +202,7 @@ export class DBGateway {
             entryID: entryID,
             parentID: parentID,
             name: name,
-            entryType: 'directory',
+            entryType: <EntryType>'directory',
             lastModified: new Date()
         };
         try {
@@ -248,7 +249,8 @@ export class DBGateway {
                 backendURI: upload.backendURI,
                 expires: expiryDate,
                 uploadFinished: false,
-                bytes: upload.bytes.toString(10)
+                bytes: upload.bytes.toString(10),
+                mimetype: upload.type
             }));
             await transaction('files').insert(fileRecords);
             return fileRecords;
@@ -276,6 +278,7 @@ export class DBGateway {
             expires: record.expires,
             uploadFinished: record.uploadFinished,
             bytes: BigInt(record.bytes),
+            mimetype: record.mimetype,
             backendID: record.backendID,
             backendURI: record.backendURI
         };
@@ -334,16 +337,7 @@ export class DBGateway {
         if (!record) {
             throw new FileNotFoundError(fileID);
         }
-        const file: File = {
-            filesystemID: record.filesystemID,
-            fileID: record.fileID,
-            referenceCount: BigInt(record.referenceCount),
-            expires: record.expires,
-            uploadFinished: record.uploadFinished,
-            bytes: BigInt(record.bytes),
-            backendID: record.backendID,
-            backendURI: record.backendURI
-        };
+        const file: File = this.fileFromRecord(record);
         return file;
     }
 
@@ -382,7 +376,7 @@ export class DBGateway {
             entryID: entryID,
             parentID: parentID,
             name: name,
-            entryType: 'file',
+            entryType: <"file">'file',
             fileID: fileID
         };
         if (replace) {

@@ -12,6 +12,9 @@ import { ItemPlan, ItemWillUpload, ItemIsDuplicate, ItemOutput, ItemUploadStarte
 import { FilesystemPermissions } from "./types/FilesystemPermissions";
 import { EntryPermissions } from "./types/EntryPermissions";
 import { isDirectoryEntry } from "./types/DirectoryEntry";
+import { CreateDirectoryParams, DeleteEntryParams, DownloadFileOrRedirectResult, DownloadFileParams, DownloadFileResult, DownloadURL, FilesystemDataDownloadDirector, FilesystemDataUpload, FilesystemStructureOperations, ListDirectoryParams, MoveEntryParams, StartFileUploadParams, UploadFileParams } from '@rkaw92/storage-box-interfaces';
+import { Readable as ReadableStream } from 'stream';
+import { supportsDownloadURLs } from "./types/StorageBackend";
 
 type FilesystemPermissionType = keyof FilesystemPermissions;
 type EntryPermissionType = keyof EntryPermissions;
@@ -48,6 +51,43 @@ export class FilesystemFactory {
             throw new FilesystemNotFoundByAliasError(alias);
         }
         return new Filesystem(this.db, this.storageBackendSelector, this.storageBackendRepository, this.uploadTokenHandler, filesystemEntry);
+    }
+};
+
+export class FilesystemProxy implements FilesystemStructureOperations, FilesystemDataUpload<ReadableStream>, FilesystemDataDownloadDirector<ReadableStream> {
+    private instance: Filesystem;
+    private context: UserContext;
+    constructor(instance: Filesystem, context: UserContext) {
+        this.instance = instance;
+        this.context = context;
+    }
+
+    createDirectory(params: CreateDirectoryParams) {
+        return this.instance.createDirectory(this.context, params);
+    }
+
+    listDirectory(params: ListDirectoryParams) {
+        return this.instance.listDirectory(this.context, params);
+    }
+
+    deleteEntry(params: DeleteEntryParams) {
+        return this.instance.deleteEntry(this.context, params);
+    }
+
+    moveEntry(params: MoveEntryParams) {
+        return this.instance.moveEntry(this.context, params);
+    }
+    
+    startFileUpload(params: StartFileUploadParams) {
+        return this.instance.startFileUpload(this.context, params);
+    }
+
+    uploadFile(params: UploadFileParams<ReadableStream>) {
+        return this.instance.uploadFile(this.context, params);
+    }
+
+    async downloadFileOrRedirect(params: DownloadFileParams): Promise<DownloadFileOrRedirectResult<ReadableStream>> {
+        return await this.instance.downloadFileOrRedirect(this.context, params);
     }
 };
 
@@ -118,35 +158,35 @@ export class Filesystem {
         }
     }
 
-    async createDirectory(user: UserContext, parentID: EntryID | null, name: string) {
-        await this.checkEntryPermission(user, 'canWrite', parentID);
+    async createDirectory(user: UserContext, params: CreateDirectoryParams) {
+        await this.checkEntryPermission(user, 'canWrite', params.parentID);
         try {
-            return await this.db.createDirectory(this.filesystemID, parentID, name);
+            return await this.db.createDirectory(this.filesystemID, params.parentID, params.name);
         } catch (error) {
             console.error(error);
             throw error;
         }
     }
 
-    async listDirectory(user: UserContext, directoryID: EntryID | null) {
-        await this.checkEntryPermission(user, 'canRead', directoryID);
-        return await this.db.listDirectory(this.filesystemID, directoryID);
+    async listDirectory(user: UserContext, params: ListDirectoryParams) {
+        await this.checkEntryPermission(user, 'canRead', params.directoryID);
+        return await this.db.listDirectory(this.filesystemID, params.directoryID);
     }
 
-    async startFileUpload(user: UserContext, files: FileUploadStart[]): Promise<ItemOutput[]> {
-        const parentIDs = new Set(files.map((upload) => upload.parentID));
+    async startFileUpload(user: UserContext, params: StartFileUploadParams): Promise<ItemOutput[]> {
+        const parentIDs = new Set(params.files.map((upload) => upload.parentID));
         for (let parentID of parentIDs.values()) {
             await this.checkEntryPermission(user, 'canWrite', parentID);
         }
         // First, find out if the files already exist in their target directories.
         // This will determine whether or not we can safely start an upload to that location.
-        const existingEntries = await this.db.getEntriesByPaths(this.filesystemID, files);
+        const existingEntries = await this.db.getEntriesByPaths(this.filesystemID, params.files);
         const existingEntryMap = new Map(existingEntries.map(function(entry) {
             return [ entryToKey(entry), entry ];
         }));
-        const backendID = await this.storageBackendSelector.selectBackendForUpload(this.filesystemID, files);
+        const backendID = await this.storageBackendSelector.selectBackendForUpload(this.filesystemID, params.files);
         const backend = await this.storageBackendRepository.getBackendByID(backendID);
-        const plan: ItemPlan[] = await Promise.all(files.map(async function(file): Promise<ItemWillUpload | ItemIsDuplicate> {
+        const plan: ItemPlan[] = await Promise.all(params.files.map(async function(file): Promise<ItemWillUpload | ItemIsDuplicate> {
             // Guard clause: disallow replacing directories with files under any conditions:
             const existingEntry = existingEntryMap.get(entryToKey(file));
             if (existingEntry && existingEntry.entryType === 'directory') {
@@ -202,8 +242,8 @@ export class Filesystem {
         return outputs;
     }
 
-    async uploadFile(user: UserContext, uploadUntrusted: FileUploadUntrusted) {
-        const upload = this.uploadTokenHandler.verify(uploadUntrusted.token);
+    async uploadFile(user: UserContext, params: UploadFileParams<ReadableStream>) {
+        const upload = this.uploadTokenHandler.verify(params.upload.token);
         await this.checkEntryPermission(user, 'canWrite', upload.parentID);
 
         const { backendID, backendURI, uploadFinished } = await this.db.getFile(this.filesystemID, upload.fileID);
@@ -211,41 +251,53 @@ export class Filesystem {
             throw new FileAlreadyUploadedError(upload.fileID);
         }
         const backend = await this.storageBackendRepository.getBackendByID(backendID);
-        await backend.uploadStream(backendURI, uploadUntrusted.stream);
+        await backend.uploadStream(backendURI, params.upload.data);
         return await this.db.finishFileUpload(this.filesystemID, upload);
     }
 
-    async getFileDownloadURL(user: UserContext, entryID: EntryID) {
-        const entry = await this.db.getEntry(this.filesystemID, entryID);
+    async downloadFileOrRedirect(user: UserContext, params: DownloadFileParams): Promise<DownloadFileOrRedirectResult<ReadableStream>> {
+        const entry = await this.db.getEntry(this.filesystemID, params.entryID);
         await this.checkEntryPermissionByPath(user, 'canRead', entry.path);
         if (!isFileEntry(entry)) {
-            throw new CannotDownloadDirectoryError(entryID);
+            throw new CannotDownloadDirectoryError(params.entryID);
         }
-        const { backendID, backendURI } = await this.db.getFile(this.filesystemID, entry.fileID);
+        const { backendID, backendURI, mimetype, bytes } = await this.db.getFile(this.filesystemID, entry.fileID);
         const backend = await this.storageBackendRepository.getBackendByID(backendID);
-        const downloadURL = await backend.getDownloadURL(backendURI, entry.name);
-        return downloadURL;
+        if (supportsDownloadURLs(backend)) {
+            return {
+                url: await backend.getDownloadURL(backendURI, entry.name, 'inline', mimetype)
+            };
+        } else {
+            return {
+                info: {
+                    name: entry.name,
+                    mimetype: mimetype,
+                    bytes: Number(bytes)
+                },
+                data: await backend.downloadStream(backendURI)
+            };
+        }
     }
 
-    async deleteEntry(user: UserContext, entryID: EntryID) {
-        await this.checkEntryParentPermission(user, 'canWrite', entryID);
-        await this.db.deleteEntry(this.filesystemID, entryID);
+    async deleteEntry(user: UserContext, params: DeleteEntryParams) {
+        await this.checkEntryParentPermission(user, 'canWrite', params.entryID);
+        await this.db.deleteEntry(this.filesystemID, params.entryID);
     }
 
-    async moveEntry(user: UserContext, entryID: EntryID, targetParentID: EntryID | null) {
-        await this.checkEntryParentPermission(user, 'canWrite', entryID);
-        await this.checkEntryPermission(user, 'canWrite', targetParentID);
-        if (targetParentID) {
+    async moveEntry(user: UserContext, params: MoveEntryParams) {
+        await this.checkEntryParentPermission(user, 'canWrite', params.entryID);
+        await this.checkEntryPermission(user, 'canWrite', params.targetParentID);
+        if (params.targetParentID) {
             // If the target entry is specified, make sure it's an actual directory and not a file:
-            const target = await this.db.getEntry(this.filesystemID, targetParentID);
+            const target = await this.db.getEntry(this.filesystemID, params.targetParentID);
             if (!isDirectoryEntry(target)) {
-                throw new TargetIsNotDirectoryError(targetParentID);
+                throw new TargetIsNotDirectoryError(params.targetParentID);
             }
             // Also make sure it's not our descendant:
-            if (target.path.includes(entryID)) {
-                throw new DirectoryCycleError(entryID, targetParentID);
+            if (target.path.includes(params.entryID)) {
+                throw new DirectoryCycleError(params.entryID, params.targetParentID);
             }
         }
-        await this.db.moveEntry(this.filesystemID, entryID, targetParentID);
+        await this.db.moveEntry(this.filesystemID, params.entryID, params.targetParentID);
     }
 };

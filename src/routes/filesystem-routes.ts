@@ -1,42 +1,36 @@
-import { FastifyInstance, FastifyRequest } from "fastify";
-import { FilesystemFactory } from "../Filesystem";
+import { CreateDirectoryParams, DeleteEntryParams, DownloadFileInfo, isDownloadFileResult, isDownloadURL, ListDirectoryParams, MoveEntryParams } from "@rkaw92/storage-box-interfaces";
+import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { FilesystemFactory, FilesystemProxy } from "../Filesystem";
 import { EntryID, FileID } from "../types/IDs";
 import { FileUploadStart, FileUpload, FileUploadUntrusted } from "../types/Inputs";
+import { Readable as ReadableStream } from 'stream';
+import { Bug } from "../types/errors";
 
 interface AliasParams {
     alias: string;
 }
 
-interface ListParams extends AliasParams {
-    directoryID: EntryID | null;
-}
-
 interface DirectoryCreationRequest {
     Params: AliasParams;
-    Body: {
-        parentID: EntryID | null;
-        name: string;
-    };
+    Body: CreateDirectoryParams;
 }
 
-interface DeleteParams extends AliasParams {
-    entryID: EntryID;
-}
+interface DeleteParams extends AliasParams, DeleteEntryParams {};
 interface DeleteRequest {
     Params: DeleteParams;
 }
 
 interface MoveParams extends AliasParams {
-    entryID: EntryID;
+    entryID: MoveEntryParams["entryID"];
 }
-
 interface MoveRequest {
     Params: MoveParams;
     Body: {
-        targetParentID: EntryID | null;
+        targetParentID: MoveEntryParams["targetParentID"];
     }
 }
 
+interface ListParams extends AliasParams, ListDirectoryParams {}
 interface DirectoryListingRequest {
     Params: ListParams;
 }
@@ -64,6 +58,18 @@ interface FileGetRequestParams extends AliasParams {
 
 interface FileGetRequest {
     Params: FileGetRequestParams;
+}
+
+type ContentDispositionType = "inline" | "attachment";
+function sendFileInfoAsHeaders(reply: FastifyReply, info: DownloadFileInfo, disposition: ContentDispositionType = 'inline') {
+    const filenamePart = (info.name ? `; filename=${info.name}` : '');
+    reply.header('Content-Disposition', `${disposition}${filenamePart}`);
+    if (info.bytes) {
+        reply.header('Content-Length', info.bytes);
+    }
+    if (info.mimetype) {
+        reply.header('Content-Type', info.mimetype);
+    }
 }
 
 export default function getRouteInstaller({
@@ -94,11 +100,13 @@ export default function getRouteInstaller({
             }
         }, async function(request) {
             const filesystem = await filesystemFactory.getFilesystemByAlias(request.params.alias);
-            return await filesystem.createDirectory(request.userContext!, request.body.parentID, request.body.name)
+            const proxy = new FilesystemProxy(filesystem, request.userContext!);
+            return await proxy.createDirectory(request.body);
         });
         app.delete<DeleteRequest>('/fs/:alias/entries/:entryID', async function(request, response) {
             const filesystem = await filesystemFactory.getFilesystemByAlias(request.params.alias);
-            await filesystem.deleteEntry(request.userContext!, request.params.entryID);
+            const proxy = new FilesystemProxy(filesystem, request.userContext!);
+            await proxy.deleteEntry(request.params);
             return response.status(204).send();
         });
         app.post<MoveRequest>('/fs/:alias/entries/:entryID/move', {
@@ -115,21 +123,35 @@ export default function getRouteInstaller({
             }
         }, async function(request, response) {
             const filesystem = await filesystemFactory.getFilesystemByAlias(request.params.alias);
-            await filesystem.moveEntry(request.userContext!, request.params.entryID, request.body.targetParentID);
+            const proxy = new FilesystemProxy(filesystem, request.userContext!);
+            await proxy.moveEntry({
+                entryID: request.params.entryID,
+                targetParentID: request.body.targetParentID
+            });
             return response.status(200).send();
         });
         app.get<DirectoryListingRequest>('/fs/:alias/list', async function(request) {
             const filesystem = await filesystemFactory.getFilesystemByAlias(request.params.alias);
-            return await filesystem.listDirectory(request.userContext!, null);
+            const proxy = new FilesystemProxy(filesystem, request.userContext!);
+            return await proxy.listDirectory({ directoryID: null });
         });
         app.get<DirectoryListingRequest>('/fs/:alias/list/:directoryID', async function(request) {
             const filesystem = await filesystemFactory.getFilesystemByAlias(request.params.alias);
-            return await filesystem.listDirectory(request.userContext!, request.params.directoryID);
+            const proxy = new FilesystemProxy(filesystem, request.userContext!);
+            return await proxy.listDirectory({ directoryID: request.params.directoryID });
         });
         app.get<FileGetRequest>('/fs/:alias/download/:entryID', async function(request, response) {
             const filesystem = await filesystemFactory.getFilesystemByAlias(request.params.alias);
-            const downloadURL = await filesystem.getFileDownloadURL(request.userContext!, request.params.entryID);
-            return response.redirect(downloadURL);
+            const proxy = new FilesystemProxy(filesystem, request.userContext!);
+            const download = await proxy.downloadFileOrRedirect(request.params);
+            if (isDownloadURL(download)) {
+                return response.redirect(download.url);
+            } else if (isDownloadFileResult<ReadableStream>(download)) {
+                sendFileInfoAsHeaders(response, download.info);
+                return response.send(download.data);
+            } else {
+                throw new Bug('Unknown type returned from downloadFileOrRedirect()');
+            }
         });
         app.post<UploadStartRequest>('/fs/:alias/upload', {
             schema: {
@@ -156,7 +178,7 @@ export default function getRouteInstaller({
             }
         }, async function(request) {
             const filesystem = await filesystemFactory.getFilesystemByAlias(request.params.alias);
-            return await filesystem.startFileUpload(request.userContext!, request.body.files);
+            return await filesystem.startFileUpload(request.userContext!, request.body);
         });
         app.register(async function(isolatedApp) {
             isolatedApp.addContentTypeParser('*', async function(request: FastifyRequest, body: any) {
@@ -181,8 +203,10 @@ export default function getRouteInstaller({
             }, async function(request) {
                 const filesystem = await filesystemFactory.getFilesystemByAlias(request.params.alias);
                 return await filesystem.uploadFile(request.userContext!, {
-                    stream: request.body,
-                    token: request.query.token
+                    upload: {
+                        data: request.body,
+                        token: request.query.token
+                    }
                 });
             });
         });

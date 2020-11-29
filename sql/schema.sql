@@ -122,6 +122,7 @@ CREATE TABLE files (
     "expires" TIMESTAMP WITH TIME ZONE,
     "uploadFinished" BOOLEAN NOT NULL DEFAULT FALSE,
     "bytes" BIGINT NOT NULL DEFAULT 0,
+    "mimetype" TEXT NOT NULL DEFAULT 'application/octet-stream',
     CONSTRAINT "files_primary" PRIMARY KEY ("filesystemID", "fileID")
 ) PARTITION BY LIST ("filesystemID");
 
@@ -134,6 +135,7 @@ CREATE TABLE files_derivatives (
     "backendURI" TEXT NOT NULL,
     "expires" TIMESTAMP WITH TIME ZONE,
     "bytes" BIGINT NOT NULL DEFAULT 0,
+    "mimetype" TEXT NOT NULL DEFAULT 'application/octet-stream',
     CONSTRAINT "files_derivatives_primary" PRIMARY KEY ("filesystemID", "fileID", "usageID")
 ) PARTITION BY LIST ("filesystemID");
 
