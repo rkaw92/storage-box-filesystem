@@ -85,10 +85,15 @@ CREATE TABLE entries (
     "lastModified" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     CONSTRAINT "entries_primary" PRIMARY KEY ("filesystemID", "entryID"),
     CONSTRAINT "entries_unique_name" UNIQUE ("filesystemID", "parentID", "name"),
+    CONSTRAINT "entries_unique_name_null" UNIQUE ("filesystemID", ("parentID" IS NULL), "name") WHERE ("parentID" IS NULL),
     CONSTRAINT "entries_has_fileID" CHECK ("entryType" = 'file' AND "fileID" IS NOT NULL OR "entryType" <> 'file'),
     CONSTRAINT "entries_parent" FOREIGN KEY ("filesystemID", "parentID") REFERENCES entries("filesystemID", "entryID")
 ) PARTITION BY LIST ("filesystemID");
 CREATE INDEX path_gin_idx ON entries USING GIN (path);
+-- UNIQUE constraints don't catch cases where one of the columns is NULL, so in order to enforce uniqueness
+--  within the root directory (parentID=null), we need a partial unique index, as described here:
+--  https://www.enterprisedb.com/postgres-tutorials/postgresql-unique-constraint-null-allowing-only-one-null
+CREATE UNIQUE INDEX entries_unique_name_null ON entries ("filesystemID", ("parentID" IS NULL), name) WHERE "parentID" IS NULL;
 
 -- NOTE: The below needs to be installed per-partition!
 -- CREATE TRIGGER entries_path_on_create BEFORE INSERT

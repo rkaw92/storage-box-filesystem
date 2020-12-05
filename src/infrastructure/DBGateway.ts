@@ -213,7 +213,7 @@ export class DBGateway {
                 throw new NoParentDirectoryError(parentID!);
             }
             if (error.code === SQL_UNIQUE_CONSTRAINT_VIOLATION) {
-                if (error.constraint === 'entries_unique_name') {
+                if (error.constraint === `entries_${filesystemID}_filesystemID_parentID_name_key` || error.constraint === `entries_${filesystemID}_filesystemID_expr_name_idx`) {
                     throw new DuplicateEntryNameError(parentID, name);
                 }
             }
