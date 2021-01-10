@@ -187,7 +187,7 @@ export default function getRouteInstaller({
             isolatedApp.addContentTypeParser('application/json', async function(request: FastifyRequest, body: any) {
                 return body;
             });
-            app.post<UploadFileRequest>('/fs/:alias/upload/finish', {
+            isolatedApp.post<UploadFileRequest>('/fs/:alias/upload/finish', {
                 schema: {
                     params: {
                         alias: { type: 'string' }
