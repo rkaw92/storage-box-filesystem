@@ -44,7 +44,7 @@ export class MinioBackend implements StorageBackend, StorageBackendDownloadURLPr
     async getDownloadURL(URI: string, targetName: string, dispositionType: ContentDispositionType = 'inline', mimetype = 'application/octet-stream') {
         // TODO: Un-hardcode this expiration time
         return await this.client.presignedGetObject(this.bucketName, URI, 120, {
-            'response-content-disposition': `${dispositionType}; filename=${targetName}`,
+            'response-content-disposition': `${dispositionType}; filename="${targetName}"`,
             'response-content-type': mimetype
         });
     }

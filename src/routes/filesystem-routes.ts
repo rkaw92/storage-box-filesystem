@@ -62,7 +62,7 @@ interface FileGetRequest {
 
 type ContentDispositionType = "inline" | "attachment";
 function sendFileInfoAsHeaders(reply: FastifyReply, info: DownloadFileInfo, disposition: ContentDispositionType = 'inline') {
-    const filenamePart = (info.name ? `; filename=${info.name}` : '');
+    const filenamePart = (info.name ? `; filename="${info.name}"` : '');
     reply.header('Content-Disposition', `${disposition}${filenamePart}`);
     if (info.bytes) {
         reply.header('Content-Length', info.bytes);
