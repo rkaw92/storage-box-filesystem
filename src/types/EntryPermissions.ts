@@ -1,4 +1,2 @@
-export interface EntryPermissions {
-    canRead: boolean;
-    canWrite: boolean;
-};
+import { EntryPermissions } from '@rkaw92/storage-box-interfaces';
+export { EntryPermissions };

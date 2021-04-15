@@ -1,10 +1,10 @@
-import { AttributeSelector } from "./AttributeSelector";
+import { AttributeBasedCriterion } from "./AttributeBasedCriterion";
 import { FilesystemPermissions } from "./FilesystemPermissions";
 
 export type FilesystemRecordID = string;
 export type EntryRecordID = string;
 
-export interface FilesystemPermissionsRecord extends FilesystemPermissions, AttributeSelector {
+export interface FilesystemPermissionsRecord extends FilesystemPermissions, AttributeBasedCriterion {
     filesystemID: string;
 };
 

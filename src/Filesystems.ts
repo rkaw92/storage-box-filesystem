@@ -1,8 +1,7 @@
 import { DBGateway } from "./infrastructure/DBGateway";
 import { UserContext } from "./types/UserContext";
 import { NoCapabilityError } from "./types/errors";
-import { AttributeSelector } from "./types/AttributeSelector";
-import { getDefaultAttributeSelectorForUser } from "./utils/getDefaultAttributeSelectorForUser";
+import { getDefaultCriterionForUser } from "./utils/getDefaultCriterionForUser";
 import { CreateFilesystemParams, FilesystemsOperations } from '@rkaw92/storage-box-interfaces';
 
 
@@ -41,7 +40,7 @@ export class Filesystems {
     createFilesystem(user: UserContext, params: CreateFilesystemParams) {
         if (user.canCreateFilesystems) {
             // Initially, the user who creates the filesystem automatically becomes its manager.
-            const grantInitialPermissionsTo = [ getDefaultAttributeSelectorForUser(user.identification) ];
+            const grantInitialPermissionsTo = [ getDefaultCriterionForUser(user.identification) ];
             return this.db.createFilesystem(grantInitialPermissionsTo, params.name, params.alias);
         } else {
             throw new NoCapabilityError('create-fs');

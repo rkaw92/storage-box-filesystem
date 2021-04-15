@@ -1,5 +1,2 @@
-export interface FilesystemPermissions {
-    canRead: boolean;
-    canWrite: boolean;
-    canManage: boolean;
-};
+import { FilesystemPermissions } from '@rkaw92/storage-box-interfaces';
+export { FilesystemPermissions };

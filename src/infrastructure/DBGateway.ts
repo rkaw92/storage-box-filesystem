@@ -2,7 +2,7 @@ import Knex from 'knex';
 import { UserIdentification } from '../types/UserIdentification';
 import { AppError, NoParentDirectoryError, DuplicateEntryNameError, FileNotFoundError, EntryNotFoundError, EntryNotFoundByNameError } from '../types/errors';
 import { FilesystemPermissionsRecord, FilesystemRecordID, FileRecord, EntryRecord } from '../types/records';
-import { AttributeSelector } from "../types/AttributeSelector";
+import { AttributeBasedCriterion } from "../types/AttributeBasedCriterion";
 import { FilesystemPermissions } from '../types/FilesystemPermissions';
 import { FilesystemID, EntryID, FileID, ParentID } from '../types/IDs';
 import { File } from '../types/File';
@@ -89,7 +89,7 @@ export class DBGateway {
         }
     }
 
-    async createFilesystem(initialPermissionsFor: AttributeSelector[], name: string, alias: string) {
+    async createFilesystem(initialPermissionsFor: AttributeBasedCriterion[], name: string, alias: string) {
         const self = this;
         return await this.db.transaction(async function(transaction) {
             const filesystemID = await self.obtainValueFromSequence(transaction, 'filesystems_seq');
