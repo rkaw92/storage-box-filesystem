@@ -85,7 +85,6 @@ CREATE TABLE entries (
     "lastModified" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
     CONSTRAINT "entries_primary" PRIMARY KEY ("filesystemID", "entryID"),
     CONSTRAINT "entries_unique_name" UNIQUE ("filesystemID", "parentID", "name"),
-    CONSTRAINT "entries_unique_name_null" UNIQUE ("filesystemID", ("parentID" IS NULL), "name") WHERE ("parentID" IS NULL),
     CONSTRAINT "entries_has_fileID" CHECK ("entryType" = 'file' AND "fileID" IS NOT NULL OR "entryType" <> 'file'),
     CONSTRAINT "entries_parent" FOREIGN KEY ("filesystemID", "parentID") REFERENCES entries("filesystemID", "entryID")
 ) PARTITION BY LIST ("filesystemID");
