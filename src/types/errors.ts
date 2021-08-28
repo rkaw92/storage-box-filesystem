@@ -106,3 +106,15 @@ export class DirectoryCycleError extends AppError {
         this.data = { targetEntryID };
     }
 };
+
+export class PermissionExistsError extends AppError {
+    constructor() {
+        super('A permission for this entry with the same criterion and same revocation criterion already exists');
+    }
+};
+
+export class PermissionDoesNotExistError extends AppError {
+    constructor() {
+        super('A permission for this entry with the given criterion and revocation criterion does not exist');
+    }
+};

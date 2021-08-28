@@ -1,4 +1,4 @@
-import { CreateDirectoryParams, DeleteEntryParams, DownloadFileInfo, isDownloadFileResult, isDownloadURL, ListDirectoryParams, MoveEntryParams } from "@rkaw92/storage-box-interfaces";
+import { CreateDirectoryParams, DeleteEntryParams, DownloadFileInfo, isDownloadFileResult, isDownloadURL, ListDirectoryParams, MoveEntryParams, SetEntryPermissionParams } from "@rkaw92/storage-box-interfaces";
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { FilesystemFactory, FilesystemProxy } from "../Filesystem";
 import { EntryID, FileID } from "../types/IDs";
@@ -28,6 +28,14 @@ interface MoveRequest {
     Body: {
         targetParentID: MoveEntryParams["targetParentID"];
     }
+}
+
+interface SetPermissionParams extends AliasParams {
+    entryID: SetEntryPermissionParams["entryID"];
+}
+interface SetPermissionsRequest {
+    Params: SetPermissionParams;
+    Body: Omit<SetEntryPermissionParams,"entryID">;
 }
 
 interface ListParams extends AliasParams, ListDirectoryParams {}
@@ -127,6 +135,38 @@ export default function getRouteInstaller({
             await proxy.moveEntry({
                 entryID: request.params.entryID,
                 targetParentID: request.body.targetParentID
+            });
+            return response.status(200).send();
+        });
+        app.post<SetPermissionsRequest>('/fs/:alias/entries/:entryID/setPermissions', {
+            schema: {
+                params: {
+                    alias: { type: 'string' },
+                    entryID: { type: 'string' }
+                },
+                body: {
+                    type: 'object',
+                    properties: {
+                        permission: {
+                            canRead: { type: 'boolean' },
+                            canWrite: { type: 'boolean' },
+                            canShare: { type: 'boolean' }
+                        },
+                        criterion: {
+                            issuer: { type: 'string' },
+                            attribute: { type: 'string' },
+                            value: { type: 'string' }
+                        }
+                    }
+                }
+            }
+        }, async function(request, response) {
+            const filesystem = await filesystemFactory.getFilesystemByAlias(request.params.alias);
+            const proxy = new FilesystemProxy(filesystem, request.userContext!);
+            await proxy.setEntryPermission({
+                entryID: request.params.entryID,
+                permission: request.body.permission,
+                criterion: request.body.criterion
             });
             return response.status(200).send();
         });

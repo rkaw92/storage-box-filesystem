@@ -1,6 +1,6 @@
 import Knex from 'knex';
 import { UserIdentification } from '../types/UserIdentification';
-import { AppError, NoParentDirectoryError, DuplicateEntryNameError, FileNotFoundError, EntryNotFoundError, EntryNotFoundByNameError } from '../types/errors';
+import { AppError, NoParentDirectoryError, DuplicateEntryNameError, FileNotFoundError, EntryNotFoundError, EntryNotFoundByNameError, PermissionExistsError, PermissionDoesNotExistError } from '../types/errors';
 import { FilesystemPermissionsRecord, FilesystemRecordID, FileRecord, EntryRecord } from '../types/records';
 import { AttributeBasedCriterion } from "../types/AttributeBasedCriterion";
 import { FilesystemPermissions } from '../types/FilesystemPermissions';
@@ -23,6 +23,7 @@ const MINIMUM_BYTES_PER_SECOND = MINIMUM_BITS_PER_SECOND / 8;
 const MINIMUM_TIME = 5 * ONE_MINUTE;
 
 const entryColumns = [ 'filesystemID', 'entryID', 'parentID', 'path', 'name', 'entryType', 'fileID', 'lastModified' ];
+const entryPermissionsPrimaryKey = [ 'filesystemID', 'entryID', 'issuer', 'attribute', 'value', 'issuerForRevocation', 'attributeForRevocation', 'valueForRevocation' ];
 const fileColumns = [ 'filesystemID', 'fileID', 'referenceCount', 'backendID', 'backendURI', 'expires', 'uploadFinished', 'bytes', 'mimetype' ];
 
 function applyAttributeBasedWhere(query: Knex.QueryBuilder<any>, user: UserAttributes) {
@@ -106,6 +107,7 @@ export class DBGateway {
                 value: value,
                 canRead: true,
                 canWrite: true,
+                canShare: true,
                 canManage: true
             })));
             const sequenceNames = [
@@ -138,8 +140,9 @@ export class DBGateway {
                 // Ask for 1 if any record has canRead = true, 0 if none of the records; NULL if we get no records that match.
                 this.db.raw('MAX("canRead"::int) AS "canRead"'),
                 this.db.raw('MAX("canWrite"::int) AS "canWrite"'),
-                this.db.raw('MAX("canManage"::int) AS "canManage"'))
-            .where({
+                this.db.raw('MAX("canShare"::int) AS "canShare"'),
+                this.db.raw('MAX("canManage"::int) AS "canManage"')
+            ).where({
                 issuer: user.issuer,
                 filesystemID: filesystemID
             }).andWhere(function() {
@@ -150,6 +153,7 @@ export class DBGateway {
                 // We need type conversion because we get 0, 1 or NULL from SQL.
                 canRead: Boolean(permissionRow.canRead),
                 canWrite: Boolean(permissionRow.canWrite),
+                canShare: Boolean(permissionRow.canShare),
                 canManage: Boolean(permissionRow.canManage)
             };
         } else {
@@ -175,8 +179,9 @@ export class DBGateway {
             .first(
                 // Ask for 1 if any record has canRead = true, 0 if none of the records; NULL if we get no records that match.
                 this.db.raw('MAX("canRead"::int) AS "canRead"'),
-                this.db.raw('MAX("canWrite"::int) AS "canWrite"'))
-            .where({
+                this.db.raw('MAX("canWrite"::int) AS "canWrite"'),
+                this.db.raw('MAX("canShare"::int) AS "canShare"')
+            ).where({
                 issuer: user.issuer,
                 filesystemID: filesystemID
             })
@@ -188,7 +193,8 @@ export class DBGateway {
                 return {
                     // We need type conversion because we get 0, 1 or NULL from SQL.
                     canRead: Boolean(permissionRow.canRead),
-                    canWrite: Boolean(permissionRow.canWrite)
+                    canWrite: Boolean(permissionRow.canWrite),
+                    canShare: Boolean(permissionRow.canShare)
                 };
             } else {
                 throw new AppError(`No permission rows were retrieved from query for entry path ${path.join(',')} in filesystemID ${filesystemID} - this should not be possible`);
@@ -450,5 +456,38 @@ export class DBGateway {
             filesystemID: filesystemID,
             entryID: entryID
         });
+    }
+
+    async upsertEntryPermissions(filesystemID: FilesystemID, entryID: EntryID, criterion: AttributeBasedCriterion, permissions: EntryPermissions, revocationCriterion: AttributeBasedCriterion, comment: string | null) {
+        await this.db('entry_permissions').insert({
+            filesystemID: filesystemID,
+            entryID: entryID,
+            issuer: criterion.issuer,
+            attribute: criterion.attribute,
+            value: criterion.value,
+            canRead: permissions.canRead,
+            canWrite: permissions.canWrite,
+            canShare: permissions.canShare,
+            issuerForRevocation: revocationCriterion.issuer,
+            attributeForRevocation: revocationCriterion.attribute,
+            valueForRevocation: revocationCriterion.value,
+            comment: comment
+        }).onConflict(entryPermissionsPrimaryKey).merge();
+    }
+
+    async deleteEntryPermissions(filesystemID: FilesystemID, entryID: EntryID, criterion: AttributeBasedCriterion, revocationCriterion: AttributeBasedCriterion) {
+        const deletedCount = await this.db('entry_permissions').delete().where({
+            filesystemID: filesystemID,
+            entryID: entryID,
+            issuer: criterion.issuer,
+            attribute: criterion.attribute,
+            value: criterion.value,
+            issuerForRevocation: revocationCriterion.issuer,
+            attributeForRevocation: revocationCriterion.attribute,
+            valueForRevocation: revocationCriterion.value
+        });
+        if (deletedCount === 0) {
+            throw new PermissionDoesNotExistError();
+        }
     }
 };

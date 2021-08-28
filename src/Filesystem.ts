@@ -12,15 +12,21 @@ import { ItemPlan, ItemWillUpload, ItemIsDuplicate, ItemOutput, ItemUploadStarte
 import { FilesystemPermissions } from "./types/FilesystemPermissions";
 import { EntryPermissions } from "./types/EntryPermissions";
 import { isDirectoryEntry } from "./types/DirectoryEntry";
-import { CreateDirectoryParams, DeleteEntryParams, DownloadFileOrRedirectResult, DownloadFileParams, DownloadFileResult, DownloadURL, FilesystemDataDownloadDirector, FilesystemDataUpload, FilesystemStructureOperations, ListDirectoryParams, MoveEntryParams, StartFileUploadParams, UploadFileParams } from '@rkaw92/storage-box-interfaces';
+import { CreateDirectoryParams, DeleteEntryParams, DownloadFileOrRedirectResult, DownloadFileParams, DownloadFileResult, DownloadURL, FilesystemDataDownloadDirector, FilesystemDataUpload, FilesystemPermissionManagement, FilesystemStructureOperations, ListDirectoryParams, MoveEntryParams, SetEntryPermissionParams, StartFileUploadParams, UploadFileParams } from '@rkaw92/storage-box-interfaces';
 import { Readable as ReadableStream } from 'stream';
 import { supportsDownloadURLs } from "./types/StorageBackend";
+import { getDefaultCriterionForUser } from "./utils/getDefaultCriterionForUser";
 
 type FilesystemPermissionType = keyof FilesystemPermissions;
 type EntryPermissionType = keyof EntryPermissions;
 
 function entryToKey(entry: { parentID: ParentID, name: string }) {
     return `${entry.parentID}/${entry.name}`;
+}
+
+const entryPermissionTypes: EntryPermissionType[] = [ 'canRead', 'canWrite', 'canShare' ];
+function isEmptyPermission(permission: EntryPermissions) {
+    return entryPermissionTypes.every((permissionType) => permission[permissionType] === false);
 }
 
 export class FilesystemFactory {
@@ -54,7 +60,7 @@ export class FilesystemFactory {
     }
 };
 
-export class FilesystemProxy implements FilesystemStructureOperations, FilesystemDataUpload<ReadableStream>, FilesystemDataDownloadDirector<ReadableStream> {
+export class FilesystemProxy implements FilesystemStructureOperations, FilesystemDataUpload<ReadableStream>, FilesystemDataDownloadDirector<ReadableStream>, FilesystemPermissionManagement {
     private instance: Filesystem;
     private context: UserContext;
     constructor(instance: Filesystem, context: UserContext) {
@@ -88,6 +94,10 @@ export class FilesystemProxy implements FilesystemStructureOperations, Filesyste
 
     async downloadFileOrRedirect(params: DownloadFileParams): Promise<DownloadFileOrRedirectResult<ReadableStream>> {
         return await this.instance.downloadFileOrRedirect(this.context, params);
+    }
+
+    setEntryPermission(params: SetEntryPermissionParams) {
+        return this.instance.setEntryPermission(this.context, params);
     }
 };
 
@@ -300,4 +310,23 @@ export class Filesystem {
         }
         await this.db.moveEntry(this.filesystemID, params.entryID, params.targetParentID);
     }
+
+    async setEntryPermission(user: UserContext, params: SetEntryPermissionParams) {
+        // Always check sharing permissions:
+        await this.checkEntryPermission(user, 'canShare', params.entryID);
+        // Additionally, the user must already possess the permission they wish to share:
+        const permissionTheUserWishesToShare = entryPermissionTypes.filter((permissionType) => params.permission[permissionType]);
+        for (const permissionType of permissionTheUserWishesToShare) {
+            await this.checkEntryPermission(user, permissionType, params.entryID);
+        }
+        const revocationCriterion = getDefaultCriterionForUser(user.identification);
+        if (isEmptyPermission(params.permission)) {
+            await this.db.deleteEntryPermissions(this.filesystemID, params.entryID, params.criterion, revocationCriterion);
+        } else {
+            // TODO: Accept a comment
+            await this.db.upsertEntryPermissions(this.filesystemID, params.entryID, params.criterion, params.permission, revocationCriterion, null)
+        }
+    }
+
+    // TODO: revokeEntryPermissionAdministratively - requires the "canManage" permission on the entire fs
 };

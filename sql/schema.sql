@@ -68,6 +68,7 @@ CREATE TABLE filesystem_permissions (
     "filesystemID" BIGINT NOT NULL,
     "canRead" BOOLEAN NOT NULL DEFAULT FALSE,
     "canWrite" BOOLEAN NOT NULL DEFAULT FALSE,
+    "canShare" BOOLEAN NOT NULL DEFAULT FALSE,
     "canManage" BOOLEAN NOT NULL DEFAULT FALSE,
     CONSTRAINT "filesystem_permissions_primary" PRIMARY KEY ("issuer", "attribute", "value", "filesystemID")
 );
@@ -113,7 +114,12 @@ CREATE TABLE entry_permissions (
     "entryID" BIGINT NOT NULL,
     "canRead" BOOLEAN NOT NULL DEFAULT FALSE,
     "canWrite" BOOLEAN NOT NULL DEFAULT FALSE,
-    CONSTRAINT "entry_permissions_primary" PRIMARY KEY ("filesystemID", "issuer", "attribute", "value", "entryID"),
+    "canShare" BOOLEAN NOT NULL DEFAULT FALSE,
+    "issuerForRevocation" TEXT NOT NULL,
+    "attributeForRevocation" TEXT NOT NULL,
+    "valueForRevocation" TEXT NOT NULL,
+    "comment" TEXT,
+    CONSTRAINT "entry_permissions_primary" PRIMARY KEY ("filesystemID", "entryID", "issuer", "attribute", "value",  "issuerForRevocation", "attributeForRevocation", "valueForRevocation"),
     CONSTRAINT "entry_permissions_entry" FOREIGN KEY ("filesystemID", "entryID") REFERENCES entries ("filesystemID", "entryID") ON DELETE CASCADE
 ) PARTITION BY LIST ("filesystemID");
 
