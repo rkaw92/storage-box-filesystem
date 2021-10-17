@@ -321,10 +321,21 @@ export class Filesystem {
         }
         const revocationCriterion = getDefaultCriterionForUser(user.identification);
         if (isEmptyPermission(params.permission)) {
-            await this.db.deleteEntryPermissions(this.filesystemID, params.entryID, params.criterion, revocationCriterion);
+            await this.db.deleteEntryPermissions(
+                this.filesystemID,
+                params.entryID,
+                params.criterion,
+                revocationCriterion
+            );
         } else {
-            // TODO: Accept a comment
-            await this.db.upsertEntryPermissions(this.filesystemID, params.entryID, params.criterion, params.permission, revocationCriterion, null)
+            await this.db.upsertEntryPermissions(
+                this.filesystemID,
+                params.entryID,
+                params.criterion,
+                params.permission,
+                revocationCriterion,
+                params.comment || null
+            );
         }
     }
 
