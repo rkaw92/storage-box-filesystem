@@ -214,7 +214,7 @@ export class DBGateway {
         try {
             await this.db('entries').insert(entry);
             return entry;
-        } catch (error) {
+        } catch (error: any) {
             if (error.code === SQL_FOREIGN_KEY_VIOLATION) {
                 throw new NoParentDirectoryError(parentID!);
             }
@@ -388,7 +388,7 @@ export class DBGateway {
         if (replace) {
             try {
                 await this._deleteFileEntryByName(transaction, filesystemID, parentID, name);
-            } catch (error) {
+            } catch (error: any) {
                 // Ignore errors that say the file is already deleted:
                 if (!(error instanceof EntryNotFoundByNameError)) {
                     throw error;
@@ -412,7 +412,7 @@ export class DBGateway {
                 });
                 return self.createFileEntry(transaction, filesystemID, upload.parentID, upload.name, upload.fileID, upload.replace)
             });
-        } catch (error) {
+        } catch (error: any) {
             if (error.code === SQL_FOREIGN_KEY_VIOLATION) {
                 throw new NoParentDirectoryError(upload.parentID!);
             }
@@ -442,7 +442,7 @@ export class DBGateway {
                         filesystemID: file.filesystemID,
                         fileID: file.fileID
                     });
-                } catch (_error) {
+                } catch (_error: any) {
                     // TODO: How do we report failure?
                 }
             }));
