@@ -12,7 +12,7 @@ import { ItemPlan, ItemWillUpload, ItemIsDuplicate, ItemOutput, ItemUploadStarte
 import { FilesystemPermissions } from "./types/FilesystemPermissions";
 import { EntryPermissions } from "./types/EntryPermissions";
 import { isDirectoryEntry } from "./types/DirectoryEntry";
-import { CreateDirectoryParams, DeleteEntryParams, DownloadFileOrRedirectResult, DownloadFileParams, DownloadFileResult, DownloadURL, FilesystemDataDownloadDirector, FilesystemDataUpload, FilesystemPermissionManagement, FilesystemStructureOperations, ListDirectoryParams, MoveEntryParams, SetEntryPermissionParams, StartFileUploadParams, UploadFileParams } from '@rkaw92/storage-box-interfaces';
+import { CreateDirectoryParams, DeleteEntryParams, DownloadFileOrRedirectResult, DownloadFileParams, DownloadFileResult, DownloadURL, FilesystemDataDownloadDirector, FilesystemDataUpload, FilesystemPermissionManagement, FilesystemStructureOperations, ListDirectoryParams, MoveEntryParams, RevokePermissionAdministrativelyParams, SetEntryPermissionParams, StartFileUploadParams, UploadFileParams } from '@rkaw92/storage-box-interfaces';
 import { Readable as ReadableStream } from 'stream';
 import { supportsDownloadURLs } from "./types/StorageBackend";
 import { getDefaultCriterionForUser } from "./utils/getDefaultCriterionForUser";
@@ -98,6 +98,10 @@ export class FilesystemProxy implements FilesystemStructureOperations, Filesyste
 
     setEntryPermission(params: SetEntryPermissionParams) {
         return this.instance.setEntryPermission(this.context, params);
+    }
+
+    revokePermissionAdministratively(params: RevokePermissionAdministrativelyParams) {
+        return this.instance.revokePermissionAdministratively(this.context, params);
     }
 };
 
@@ -339,5 +343,16 @@ export class Filesystem {
         }
     }
 
-    // TODO: revokeEntryPermissionAdministratively - requires the "canManage" permission on the entire fs
+    async revokePermissionAdministratively(user: UserContext, params: RevokePermissionAdministrativelyParams) {
+        const hasAdministrativePermission = await this.hasFilesystemPermission(user, 'canManage');
+        if (!hasAdministrativePermission) {
+            throw new NoFilesystemPermissionError('canManage');
+        }
+        await this.db.deleteEntryPermissions(
+            this.filesystemID,
+            params.entryID,
+            params.criterion,
+            params.revocationCriterion
+        );
+    }
 };

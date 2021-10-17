@@ -1,4 +1,4 @@
-import { CreateDirectoryParams, DeleteEntryParams, DownloadFileInfo, isDownloadFileResult, isDownloadURL, ListDirectoryParams, MoveEntryParams, SetEntryPermissionParams } from "@rkaw92/storage-box-interfaces";
+import { CreateDirectoryParams, DeleteEntryParams, DownloadFileInfo, isDownloadFileResult, isDownloadURL, ListDirectoryParams, MoveEntryParams, RevokePermissionAdministrativelyParams, SetEntryPermissionParams } from "@rkaw92/storage-box-interfaces";
 import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { FilesystemFactory, FilesystemProxy } from "../Filesystem";
 import { EntryID, FileID } from "../types/IDs";
@@ -36,6 +36,14 @@ interface SetPermissionParams extends AliasParams {
 interface SetPermissionsRequest {
     Params: SetPermissionParams;
     Body: Omit<SetEntryPermissionParams,"entryID">;
+}
+
+interface RevokePermissionAdministrativelyRouteParams extends AliasParams {
+    entryID: RevokePermissionAdministrativelyParams["entryID"];
+}
+interface RevokePermissionAdministrativelyRequest {
+    Params: RevokePermissionAdministrativelyRouteParams;
+    Body: Omit<RevokePermissionAdministrativelyParams,"entryID">;
 }
 
 interface ListParams extends AliasParams, ListDirectoryParams {}
@@ -167,6 +175,38 @@ export default function getRouteInstaller({
                 entryID: request.params.entryID,
                 permission: request.body.permission,
                 criterion: request.body.criterion
+            });
+            return response.status(200).send();
+        });
+        app.post<RevokePermissionAdministrativelyRequest>('/fs/:alias/entries/:entryID/revokePermissionAdministratively', {
+            schema: {
+                params: {
+                    alias: { type: 'string' },
+                    entryID: { type: 'string' }
+                },
+                body: {
+                    type: 'object',
+                    properties: {
+                        criterion: {
+                            issuer: { type: 'string' },
+                            attribute: { type: 'string' },
+                            value: { type: 'string' }
+                        },
+                        revocationCriterion: {
+                            issuer: { type: 'string' },
+                            attribute: { type: 'string' },
+                            value: { type: 'string' }
+                        }
+                    }
+                }
+            }
+        }, async function(request, response) {
+            const filesystem = await filesystemFactory.getFilesystemByAlias(request.params.alias);
+            const proxy = new FilesystemProxy(filesystem, request.userContext!);
+            await proxy.revokePermissionAdministratively({
+                entryID: request.params.entryID,
+                criterion: request.body.criterion,
+                revocationCriterion: request.body.revocationCriterion
             });
             return response.status(200).send();
         });
