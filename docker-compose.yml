@@ -1,7 +1,9 @@
 version: "3.8"
 services:
     db:
-        image: postgres:13
+        build:
+            context: .
+            dockerfile: docker/db/Dockerfile
         environment:
             - POSTGRES_PASSWORD
         ports:
