@@ -1,10 +1,10 @@
 import Knex from 'knex';
 import { DBGateway } from './DBGateway';
 
-export function getDBGateway() {
+export function getDBGateway(connectionString: string | undefined = process.env.PG_CONNECTION_STRING) {
     const db = Knex({
         client: 'pg',
-        connection: process.env.PG_CONNECTION_STRING
+        connection: connectionString
     });
     const gateway = new DBGateway(db);
     return gateway;
