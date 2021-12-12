@@ -1,5 +1,6 @@
 import fastify from 'fastify';
 import cookieMiddleware from 'fastify-cookie';
+import corsMiddleware from 'fastify-cors';
 import devRoutes from './dev-routes';
 import filesystemsRoutes from './routes/filesystems-routes';
 import filesystemRoutes from './routes/filesystem-routes';
@@ -44,6 +45,9 @@ const app = fastify({
     logger: true
 });
 app.register(cookieMiddleware, {});
+app.register(corsMiddleware, {
+    origin: process.env.HTTP_ALLOW_ORIGINS ? process.env.HTTP_ALLOW_ORIGINS.split(',') : false
+});
 app.decorateRequest('userContext', undefined);
 app.addHook('onRequest', userContextHook);
 app.register(devRoutes(), {
